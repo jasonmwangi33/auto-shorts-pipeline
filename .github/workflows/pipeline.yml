@@ -1,0 +1,97 @@
+name: Automated Shorts Pipeline
+
+on:
+  schedule:
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Main Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-publishing.txt
+
+      - name: Run Phase 2 Engine
+        id: phase2
+        run: |
+          python main.py
+          echo "JOB_ID=$(date +%s)" >> $GITHUB_ENV
+          echo "VIDEO_PATH=output/${JOB_ID}_output.mp4" >> $GITHUB_ENV
+
+      - name: Fetch Upload State
+        uses: actions/checkout@v3
+        with:
+          ref: state 
+          path: state_branch_data
+        continue-on-error: true
+
+      - name: Move State File to Workspace
+        run: |
+          if [ -f "state_branch_data/upload_state.json" ]; then
+            cp state_branch_data/upload_state.json .
+          fi
+
+      - name: Create Temporary Release for Instagram
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="temp-vid-${{ env.JOB_ID }}"
+          gh release create "$TAG_NAME" ${{ env.VIDEO_PATH }} --title "Temp $TAG_NAME" --notes "Temporary asset for IG API"
+          PUBLIC_URL="https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/$(basename ${{ env.VIDEO_PATH }})"
+          echo "VIDEO_PUBLIC_URL=$PUBLIC_URL" >> $GITHUB_ENV
+          echo "RELEASE_TAG=$TAG_NAME" >> $GITHUB_ENV
+
+      - name: Publish to YouTube and Instagram
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          YT_REFRESH_TOKEN_1: ${{ secrets.YT_REFRESH_TOKEN_1 }}
+          YT_CHANNEL_ID_1: ${{ secrets.YT_CHANNEL_ID_1 }}
+        run: |
+          python publish_after_qc.py \
+            --video-path ${{ env.VIDEO_PATH }} \
+            --job-id ${{ env.JOB_ID }} \
+            --qc-passed \
+            --public-url ${{ env.VIDEO_PUBLIC_URL }}
+
+      - name: Delete Temporary Release
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ env.RELEASE_TAG }}" ]; then
+            gh release delete "${{ env.RELEASE_TAG }}" --cleanup-tag -y
+          fi
+
+      - name: Commit and Push State
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git clone --branch state "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" state_repo || git init state_repo
+          cp upload_state.json state_repo/ || echo "{}" > state_repo/upload_state.json
+          cd state_repo
+          if ! git rev-parse --verify origin/state >/dev/null 2>&1; then
+            git checkout --orphan state
+            git rm -rf .
+          fi
+          git add upload_state.json
+          git commit -m "Update upload state for job ${{ env.JOB_ID }}" || echo "No changes to commit"
+          git push origin state
