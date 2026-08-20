@@ -1,5 +1,13 @@
-﻿downloads/
-output/
 __pycache__/
-client_secret_*.json
-cookies.txt
+*.pyc
+.env
+venv/
+data/*.db
+data/tts_cache/
+logs/
+output/
+*.mp4
+*.jpg
+*.png
+
+youtube_accounts_bundle.json
