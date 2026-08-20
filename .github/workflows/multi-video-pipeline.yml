@@ -1,0 +1,104 @@
+name: multi-video-pipeline
+
+on:
+  schedule:
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: multi-video-pipeline
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.10'
+
+jobs:
+  scavenge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      seed_matrix: ${{ steps.scavenge.outputs.seed_matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install scavenger dependencies
+        run: pip install requests feedparser
+      - name: Scavenge content
+        id: scavenge
+        run: |
+          python scavenger.py --n 7 --output seeds.json
+          echo "seed_matrix=$(python scavenger.py --matrix --input seeds.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload seeds artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: seeds
+          path: seeds.json
+          retention-days: 1
+
+  render:
+    needs: scavenge
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.scavenge.outputs.seed_matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install engine dependencies
+        run: pip install -r requirements.txt
+      - name: Download seeds artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: seeds
+          path: .
+      - name: Render video for seed ${{ matrix.seed_index }}
+        env:
+          SEED_INDEX: ${{ matrix.seed_index }}
+          SEEDS_FILE: seeds.json
+        run: python render_worker.py --seed-index "$SEED_INDEX" --seeds-file "$SEEDS_FILE"
+      - name: Upload render artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-${{ matrix.seed_index }}
+          path: output/
+          retention-days: 1
+
+  publish:
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install publisher dependencies
+        run: pip install -r requirements-publishing.txt
+      - name: Download all render artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: render-*
+          merge-multiple: true
+      - name: Download seeds artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: seeds
+          path: artifacts/seeds
+      - name: Route and publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
+        run: python router.py --artifacts-dir artifacts --seeds-file seeds.json
