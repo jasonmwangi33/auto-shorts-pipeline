@@ -1,6 +1,6 @@
 moviepy==1.0.3
 Pillow==9.5.0
-edge-tts==6.1.9
+edge-tts
 numpy==1.26.4
 requests==2.31.0
 python-dotenv==1.0.0

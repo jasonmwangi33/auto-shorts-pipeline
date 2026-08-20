@@ -1,6 +1,7 @@
 import asyncio
 import edge_tts
 import subprocess
+import random
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 
@@ -18,7 +19,6 @@ class NarrationEngine:
             keywords = [k.strip() for k in keywords.split(',') if k.strip()]
         kw_str = ", ".join(keywords[:3]) if keywords else "the most critical details"
 
-        # Expanded 100+ word script to guarantee 35-45 seconds of audio
         hook = f"Here is exactly why {headline} is going completely viral right now."
         context = f"The situation surrounding {topic} has been developing rapidly over the last 24 hours, and it is catching everyone by surprise."
         details = f"When you look closely at the data, especially regarding {kw_str}, it becomes clear that experts are monitoring this very closely. This is not just a minor update; it could shift our entire perspective on the subject."
@@ -28,6 +28,12 @@ class NarrationEngine:
         return f"{hook} {context} {details} {implications} {outro}"
 
     async def _generate_tts(self, script: str, output_path: Path) -> List[Dict[str, Any]]:
+        # THE FIX: Tell the cloud computer to wait between 1 and 15 seconds randomly 
+        # so we don't trigger Microsoft's spam filters
+        delay = random.uniform(1.0, 15.0)
+        print(f"[*] Staggering API request... waiting {delay:.2f} seconds.")
+        await asyncio.sleep(delay)
+        
         communicate = edge_tts.Communicate(script, self.tts_voice, rate=self.tts_rate)
         word_events = []
         audio_chunks = []
