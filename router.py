@@ -65,7 +65,6 @@ def main():
             logger.info(f"Routing Video {seed_index} to Instagram")
             release_tag = f"temp-ig-{seed_index}-{int(time.time())}"
             try:
-                # Automate the GitHub temporary hosting bridge securely
                 subprocess.run(["gh", "release", "create", release_tag, str(video_path), "--title", release_tag, "--notes", "Temp IG Asset"], check=True)
                 repo = os.getenv("GITHUB_REPOSITORY")
                 public_url = f"https://github.com/{repo}/releases/download/{release_tag}/{video_path.name}"
