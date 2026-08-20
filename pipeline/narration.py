@@ -16,12 +16,16 @@ class NarrationEngine:
         keywords = seed_data.get("keywords", [])
         if isinstance(keywords, str):
             keywords = [k.strip() for k in keywords.split(',') if k.strip()]
-        kw_str = ", ".join(keywords[:3]) if keywords else "key details"
+        kw_str = ", ".join(keywords[:3]) if keywords else "the most critical details"
 
-        hook = f"Here is why {headline} is going viral right now."
-        body = f"The latest updates on {topic} are developing quickly, especially around {kw_str}. Experts say this could shift our perspective completely."
-        outro = "Follow for daily updates and share your thoughts below!"
-        return f"{hook} {body} {outro}"
+        # Expanded 100+ word script to guarantee 35-45 seconds of audio
+        hook = f"Here is exactly why {headline} is going completely viral right now."
+        context = f"The situation surrounding {topic} has been developing rapidly over the last 24 hours, and it is catching everyone by surprise."
+        details = f"When you look closely at the data, especially regarding {kw_str}, it becomes clear that experts are monitoring this very closely. This is not just a minor update; it could shift our entire perspective on the subject."
+        implications = f"If these current trends continue, we are going to see massive changes in how this is handled moving forward. You absolutely do not want to be left behind as this story unfolds."
+        outro = "Make sure to hit the subscribe button for daily updates, and let me know what you think in the comments below!"
+        
+        return f"{hook} {context} {details} {implications} {outro}"
 
     async def _generate_tts(self, script: str, output_path: Path) -> List[Dict[str, Any]]:
         communicate = edge_tts.Communicate(script, self.tts_voice, rate=self.tts_rate)
