@@ -23,7 +23,7 @@ class JobOrchestrator:
     def run_job(self, job_id: str, seed_file: str, auto_improve: bool = False, max_retries: int = 3):
         seed_path = Path(seed_file)
         if not seed_path.exists():
-            print(f\"[!] Seed file not found: {seed_file}\")
+            print(f"[!] Seed file not found: {seed_file}")
             return
 
         seed_data = json_load(seed_path)
@@ -35,10 +35,10 @@ class JobOrchestrator:
         update_job_state(job_id, JobState.DISCOVERED)
 
         # 1. Narration & Timings
-        print(f\"[*] Generating Narration for Job {job_id}...\")
+        print(f"[*] Generating Narration for Job {job_id}...")
         narration_engine = NarrationEngine(self.config)
         script, duration, word_timings, narration_path = narration_engine.generate(seed_data, tts_dir, job_id)
-        print(f\"[+] Narration generated: {duration:.2f}s\")
+        print(f"[+] Narration generated: {duration:.2f}s")
 
         # 2. Decision & EditPlan
         headline = seed_data.get("headline", "Trending News")
@@ -48,50 +48,50 @@ class JobOrchestrator:
         plan = decision.create_edit_plan(analysis, content_score, script, word_timings, headline=headline)
 
         # 3. Render
-        print(f\"[*] Rendering Video {job_id}...\")
+        print(f"[*] Rendering Video {job_id}...")
         renderer = Renderer(self.config)
         update_job_state(job_id, JobState.RENDERING)
         render_result = renderer.render(plan, narration_path, output_dir, job_id)
 
         if not render_result.success:
-            print(f\"[!] Render failed: {render_result.errors}\")
+            print(f"[!] Render failed: {render_result.errors}")
             update_job_state(job_id, JobState.FAILED)
             return
 
         # 4. Thumbnail & Metadata Extraction
-        thumbnail_path = output_dir / f\"{job_id}_thumbnail.jpg\"
-        metadata_path = output_dir / f\"{job_id}_metadata.json\"
+        thumbnail_path = output_dir / f"{job_id}_thumbnail.jpg"
+        metadata_path = output_dir / f"{job_id}_metadata.json"
         
         subprocess.run(
-            [\"ffmpeg\", \"-y\", \"-ss\", \"1.0\", \"-i\", render_result.output_path, \"-frames:v\", \"1\", \"-q:v\", \"2\", str(thumbnail_path)],
+            ["ffmpeg", "-y", "-ss", "1.0", "-i", render_result.output_path, "-frames:v", "1", "-q:v", "2", str(thumbnail_path)],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
         metadata = {
-            \"title\": headline[:60],
-            \"description\": f\"{script}\\n\\n#Shorts #Trending #News\",
-            \"hashtags\": [\"#shorts\", \"#trending\", \"#news\"]
+            "title": headline[:60],
+            "description": f"{script}\\n\\n#Shorts #Trending #News",
+            "hashtags": ["#shorts", "#trending", "#news"]
         }
         json_dump(metadata, metadata_path)
 
         # 5. Quality Control & Manifest
-        print(f\"[*] Running QC on {job_id}...\")
+        print(f"[*] Running QC on {job_id}...")
         qc = QualityControl(self.config)
         qc_result = qc.run(Path(render_result.output_path), thumbnail_path, metadata_path, output_dir)
         
         qc_manifest = {
-            \"job_id\": job_id,
-            \"seed_index\": seed_data.get(\"seed_index\", 0),
-            \"passed\": qc_result.passed,
-            \"output_file\": str(render_result.output_path),
-            \"duration\": duration,
-            \"score\": qc_result.score
+            "job_id": job_id,
+            "seed_index": seed_data.get("seed_index", 0),
+            "passed": qc_result.passed,
+            "output_file": str(render_result.output_path),
+            "duration": duration,
+            "score": qc_result.score
         }
-        json_dump(qc_manifest, output_dir / f\"{job_id}_qc.json\")
+        json_dump(qc_manifest, output_dir / f"{job_id}_qc.json")
 
         if qc_result.passed:
-            print(f\"[SUCCESS] Job {job_id} completed successfully (QC Score: {qc_result.score:.2f})!\")
+            print(f"[SUCCESS] Job {job_id} completed successfully (QC Score: {qc_result.score:.2f})!")
             update_job_state(job_id, JobState.APPROVED)
         else:
-            print(f\"[!] QC Failed for Job {job_id}: {qc_result.failures}\")
+            print(f"[!] QC Failed for Job {job_id}: {qc_result.failures}")
             update_job_state(job_id, JobState.QC_FAILED)
