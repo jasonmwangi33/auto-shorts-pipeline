@@ -50,6 +50,11 @@ jobs:
       matrix: ${{ fromJson(needs.scavenge.outputs.seed_matrix) }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install ImageMagick (MoviePy Text Engine)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          sudo sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml || true
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
