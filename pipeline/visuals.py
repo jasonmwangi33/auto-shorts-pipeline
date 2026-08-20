@@ -10,11 +10,15 @@ class VisualGenerator:
     def generate_background(self, duration: float, size: Tuple[int, int] = (1080, 1920)) -> VideoClip:
         def make_frame(t):
             w, h = size
-            x = np.linspace(0, 1, w)[None, :, None]
-            y = np.linspace(0, 1, h)[:, None, None]
+            # FIX: Removed the extra trailing dimensions that crashed the video compiler
+            x = np.linspace(0, 1, w)[None, :]
+            y = np.linspace(0, 1, h)[:, None]
+            
             r = 0.15 + 0.2 * np.sin(2 * np.pi * (x + 0.1 * t)) + 0.1 * np.cos(2 * np.pi * (y + 0.05))
             g = 0.05 + 0.2 * np.sin(2 * np.pi * (y + 0.07 * t)) + 0.1 * np.cos(2 * np.pi * (x + 0.03))
             b = 0.20 + 0.3 * np.sin(2 * np.pi * (x * 0.5 + y * 0.5 + 0.02 * t)) + 0.2 * np.cos(2 * np.pi * (y + 0.10))
+            
+            # Now perfectly stacks into a 3D array: (Height, Width, Colors)
             frame = np.stack([r, g, b], axis=2)
             return (np.clip(frame, 0, 1) * 255).astype(np.uint8)
 
