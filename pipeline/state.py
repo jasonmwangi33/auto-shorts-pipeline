@@ -8,7 +8,7 @@ from .models import JobState
 DB_PATH = Path("data") / "state.db"
 
 def get_db():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DB_PATH.parent.mkdir(exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -19,8 +19,6 @@ def init_db():
         CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY,
             state TEXT NOT NULL,
-            source_hash TEXT,
-            config_version TEXT,
             created_at TEXT,
             updated_at TEXT,
             extra_json TEXT

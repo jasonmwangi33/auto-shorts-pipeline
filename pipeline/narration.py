@@ -18,7 +18,7 @@ class NarrationEngine:
             keywords = [k.strip() for k in keywords.split(',') if k.strip()]
         kw_str = ", ".join(keywords[:2]) if keywords else "the situation"
 
-        # High-retention Reddit story narrative (~35-45s)
+        # Engaging 35-45 second storytelling format
         hook = f"So, this happened yesterday and I honestly need to know if I was in the wrong. {headline}"
         story_setup = f"It all started when things escalated around {kw_str}. Everyone involved was acting completely unreasonable, and nobody wanted to take accountability."
         climax = "I decided to put my foot down and refuse to go along with their demands. Immediately, my phone started blowing up with messages calling me selfish and out of line."

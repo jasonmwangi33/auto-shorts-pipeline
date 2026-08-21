@@ -4,6 +4,7 @@ edge-tts
 numpy==1.26.4
 requests==2.31.0
 feedparser==6.0.11
+yt-dlp
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib

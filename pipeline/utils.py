@@ -1,4 +1,3 @@
-import hashlib
 import json
 import os
 import re
@@ -6,17 +5,10 @@ import subprocess
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 def sanitize_filename(name: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-
-def get_file_hash(file_path: Path) -> str:
-    h = hashlib.sha256()
-    with open(file_path, 'rb') as f:
-        for chunk in iter(lambda: f.read(8192), b''):
-            h.update(chunk)
-    return h.hexdigest()
 
 def json_load(path: Path) -> Dict:
     with open(path, 'r', encoding='utf-8') as f:
@@ -25,10 +17,6 @@ def json_load(path: Path) -> Dict:
 def json_dump(data: Dict, path: Path):
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2)
-
-def run_ffprobe(cmd: List[str]) -> Dict:
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return json.loads(result.stdout)
 
 def make_temp_dir(prefix: str = "job") -> Path:
     return Path(tempfile.mkdtemp(prefix=f"{prefix}_"))

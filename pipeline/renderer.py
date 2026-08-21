@@ -19,7 +19,7 @@ class Renderer:
         try:
             duration = plan.target_duration
             
-            # 1. Background Video Layer (Gameplay / Cooking slice)
+            # 1. Background Video Layer (Web gameplay / ASMR food slice)
             bg_clip = self.visual_generator.get_background_clip(duration)
             
             # 2. Scrubber Progress Bar
@@ -28,13 +28,13 @@ class Renderer:
             # 3. Reddit Stamp Overlay Card (0 to 3.5s)
             reddit_stamp = generate_reddit_stamp_clip(headline, subreddit=subreddit, duration=3.5)
 
-            # 4. Kinetic Subtitles
+            # 4. Kinetic Pop Subtitles
             subtitles = self._build_subtitles(plan, duration)
 
             # 5. Narration Audio
             audio_clip = AudioFileClip(str(narration_audio_path))
             
-            # 6. Composite Everything
+            # 6. Composite & Compile
             all_clips = [bg_clip, progress_clip, reddit_stamp] + subtitles
             video = CompositeVideoClip(all_clips, size=(1080, 1920)).set_audio(audio_clip)
 
