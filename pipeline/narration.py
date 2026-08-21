@@ -12,20 +12,14 @@ class NarrationEngine:
         self.tts_rate = config.get("narration", {}).get("tts_rate", "+12%")
 
     def build_script(self, seed_data: Dict[str, Any]) -> str:
-        headline = seed_data.get("headline", "Viral Story")
-        keywords = seed_data.get("keywords", [])
-        if isinstance(keywords, str):
-            keywords = [k.strip() for k in keywords.split(',') if k.strip()]
-        kw_str = ", ".join(keywords[:2]) if keywords else "the situation"
+        headline = seed_data.get("headline", "Relatable thought")
+        
+        hook = f"Okay, tell me if I am the only one who does this, or if we all just live the exact same life. {headline}"
+        body = "I was literally just thinking about this the other day. It is so crazy how we all have these universal experiences but nobody ever talks about them out loud. It makes you realize how similar human brains actually are."
+        resolution = "The more you think about it, the more it messes with your head. It is one of those things that once you notice it, you can never un-notice it."
+        outro = "Drop a comment and let me know if you do this too, and hit subscribe for more relatable thoughts!"
 
-        # Engaging 35-45 second storytelling format
-        hook = f"So, this happened yesterday and I honestly need to know if I was in the wrong. {headline}"
-        story_setup = f"It all started when things escalated around {kw_str}. Everyone involved was acting completely unreasonable, and nobody wanted to take accountability."
-        climax = "I decided to put my foot down and refuse to go along with their demands. Immediately, my phone started blowing up with messages calling me selfish and out of line."
-        resolution = "Half the family is backing me up, but the other half says I took things way too far."
-        outro = "Drop a comment and tell me: am I the one in the wrong here? Hit subscribe for part two!"
-
-        return f"{hook} {story_setup} {climax} {resolution} {outro}"
+        return f"{hook} {body} {resolution} {outro}"
 
     async def _generate_tts(self, script: str, output_path: Path) -> List[Dict[str, Any]]:
         delay = random.uniform(1.0, 8.0)

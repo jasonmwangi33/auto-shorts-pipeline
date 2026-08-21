@@ -8,7 +8,6 @@ from publishers.youtube import upload_to_youtube_channel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("router")
 
-# Map the 7 parallel renders to the 7 YouTube channels
 ROUTES = {
     0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7
 }
@@ -16,6 +15,8 @@ ROUTES = {
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifacts-dir", type=str, default="artifacts")
+    # FIX: Tell the script to accept the seeds-file argument from GitHub Actions
+    parser.add_argument("--seeds-file", type=str, default="seeds.json") 
     args = parser.parse_args()
 
     artifacts_dir = Path(args.artifacts_dir)
@@ -23,7 +24,6 @@ def main():
         logger.error(f"Artifacts directory not found: {artifacts_dir}")
         sys.exit(1)
 
-    # Aggressively scan the folder for metadata JSON files
     metadata_files = list(artifacts_dir.rglob("*_metadata.json"))
     if not metadata_files:
         logger.warning("No metadata files found. Nothing to publish.")
@@ -40,7 +40,6 @@ def main():
             logger.error(f"[!] Missing video file for {job_id}")
             continue
 
-        # Extract seed index to match with the correct channel
         seed_index = 0
         if qc_path.exists():
             qc_data = json.loads(qc_path.read_text(encoding="utf-8"))
@@ -50,7 +49,7 @@ def main():
                 continue
 
         meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
-        title = meta_data.get("title", "Reddit Story")
+        title = meta_data.get("title", "Relatable Thoughts")
         description = meta_data.get("description", "")
         
         yt_account = ROUTES.get(seed_index, 1)

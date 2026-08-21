@@ -14,37 +14,31 @@ except ImportError:
 logger = logging.getLogger("scavenger")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
+# Shift to highly relatable, universal human experiences
 REDDIT_FEEDS = [
-    "https://www.reddit.com/r/AmItheAsshole/top/.rss?t=day",
-    "https://www.reddit.com/r/confession/top/.rss?t=day",
-    "https://www.reddit.com/r/TrueOffMyChest/top/.rss?t=day",
-    "https://www.reddit.com/r/pettyrevenge/top/.rss?t=day"
+    "https://www.reddit.com/r/Showerthoughts/top/.rss?t=day",
+    "https://www.reddit.com/r/DoesAnybodyElse/top/.rss?t=day",
+    "https://www.reddit.com/r/mildlyinfuriating/top/.rss?t=day"
 ]
 
 EVERGREEN_STORIES = [
     {
-        "headline": "AITA for refusing to attend my sister's wedding after what she did?",
-        "topic": "r/AmItheAsshole",
-        "subreddit": "r/AmItheAsshole",
-        "keywords": ["wedding", "sister", "family", "drama"]
+        "headline": "Does anyone else lower the car radio volume when they are looking for a parking spot?",
+        "topic": "r/DoesAnybodyElse",
+        "subreddit": "r/DoesAnybodyElse",
+        "keywords": ["driving", "relatable", "brain", "focus"]
     },
     {
-        "headline": "I discovered my coworker has been taking credit for my work for six months.",
-        "topic": "r/TrueOffMyChest",
-        "subreddit": "r/TrueOffMyChest",
-        "keywords": ["workplace", "coworker", "revenge", "career"]
+        "headline": "It is so weird that we wash our bath towels. Aren't we supposed to be completely clean when we use them?",
+        "topic": "r/Showerthoughts",
+        "subreddit": "r/Showerthoughts",
+        "keywords": ["shower", "logic", "relatable", "funny"]
     },
     {
-        "headline": "My landlord tried to keep my deposit, so I used the law against him.",
-        "topic": "r/pettyrevenge",
-        "subreddit": "r/pettyrevenge",
-        "keywords": ["landlord", "deposit", "petty", "justice"]
-    },
-    {
-        "headline": "When did you realize someone was living in their own movie?",
-        "topic": "r/AskReddit",
-        "subreddit": "r/AskReddit",
-        "keywords": ["reddit", "stories", "delusional", "funny"]
+        "headline": "That mini heart attack you get when you step on a stair that isn't actually there.",
+        "topic": "r/mildlyinfuriating",
+        "subreddit": "r/mildlyinfuriating",
+        "keywords": ["stairs", "heart attack", "relatable", "walking"]
     }
 ]
 
@@ -55,7 +49,7 @@ def fetch_reddit_stories(n: int = 7) -> list:
             try:
                 parsed = feedparser.parse(url)
                 sub_match = re.search(r'r/(\w+)', url)
-                sub_name = f"r/{sub_match.group(1)}" if sub_match else "r/RedditStories"
+                sub_name = f"r/{sub_match.group(1)}" if sub_match else "r/Relatable"
                 
                 for entry in parsed.entries[:6]:
                     title = entry.title.strip()
@@ -68,7 +62,7 @@ def fetch_reddit_stories(n: int = 7) -> list:
                         "subreddit": sub_name,
                         "url": entry.link,
                         "source": "reddit",
-                        "keywords": ["reddit", "story", "drama", "aita"]
+                        "keywords": ["reddit", "relatable", "thoughts"]
                     })
             except Exception as e:
                 logger.warning(f"Failed to fetch {url}: {e}")
@@ -82,7 +76,6 @@ def fetch_reddit_stories(n: int = 7) -> list:
         c["seed_index"] = i
         seeds.append(c)
 
-    # Backfill with evergreen drama if needed
     idx = len(seeds)
     while len(seeds) < n:
         backup = dict(EVERGREEN_STORIES[idx % len(EVERGREEN_STORIES)])
@@ -110,7 +103,7 @@ def main():
     seeds = fetch_reddit_stories(args.n)
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(seeds, f, indent=2)
-    logger.info(f"Successfully saved {len(seeds)} Reddit stories to {args.output}")
+    logger.info(f"Successfully saved {len(seeds)} relatable thoughts to {args.output}")
 
 if __name__ == "__main__":
     main()
