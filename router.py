@@ -1,105 +1,65 @@
-import argparse, json, logging, os, subprocess, sys, time
+import argparse
+import json
+import logging
 from pathlib import Path
+import sys
 from publishers.youtube import upload_to_youtube_channel
-from publishers.instagram import publish_instagram_reel
-from publishers.state import update_target_state
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("router")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
-ROUTES = [
-    {"seed_index": 0, "youtube_account": 1, "instagram": True},
-    {"seed_index": 1, "youtube_account": 2, "instagram": False},
-    {"seed_index": 2, "youtube_account": 3, "instagram": False},
-    {"seed_index": 3, "youtube_account": 4, "instagram": False},
-    {"seed_index": 4, "youtube_account": 5, "instagram": False},
-    {"seed_index": 5, "youtube_account": 6, "instagram": False},
-    {"seed_index": 6, "youtube_account": 7, "instagram": False},
-]
-
-def find_qc_manifest(artifacts_dir, seed_index):
-    # Recursively search for any qc.json file matching the seed index
-    for qc_path in artifacts_dir.rglob("*_qc.json"):
-        try:
-            data = json.loads(qc_path.read_text(encoding="utf-8"))
-            if data.get("seed_index") == seed_index:
-                return qc_path
-        except Exception:
-            continue
-    return None
+# Map the 7 parallel renders to the 7 YouTube channels
+ROUTES = {
+    0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7
+}
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifacts-dir", type=str, default="artifacts")
-    parser.add_argument("--seeds-file", type=str, default="seeds.json")
     args = parser.parse_args()
 
     artifacts_dir = Path(args.artifacts_dir)
-    seeds_path = Path(args.seeds_file)
-    
-    if not seeds_path.exists():
-        found = list(artifacts_dir.rglob("seeds.json"))
-        if found:
-            seeds_path = found[0]
-        else:
-            sys.exit("[!] Critical: seeds.json could not be located in artifacts.")
+    if not artifacts_dir.exists():
+        logger.error(f"Artifacts directory not found: {artifacts_dir}")
+        sys.exit(1)
 
-    seeds = json.loads(seeds_path.read_text(encoding="utf-8"))
-    logger.info(f"Loaded {len(seeds)} seeds for publishing.")
+    # Aggressively scan the folder for metadata JSON files
+    metadata_files = list(artifacts_dir.rglob("*_metadata.json"))
+    if not metadata_files:
+        logger.warning("No metadata files found. Nothing to publish.")
+        return
 
-    for route in ROUTES:
-        seed_index = route["seed_index"]
-        if seed_index >= len(seeds):
-            continue
-            
-        seed = seeds[seed_index]
-        qc_manifest_path = find_qc_manifest(artifacts_dir, seed_index)
-        
-        if not qc_manifest_path:
-            logger.warning(f"[-] No QC manifest found for seed index {seed_index}. Skipping route.")
-            continue
+    logger.info(f"[*] Found {len(metadata_files)} completed videos ready for publishing.")
 
-        qc = json.loads(qc_manifest_path.read_text(encoding="utf-8"))
-        if not qc.get("passed"):
-            logger.warning(f"[-] QC check failed for seed index {seed_index}. Skipping route.")
-            continue
+    for meta_path in metadata_files:
+        job_id = meta_path.name.replace("_metadata.json", "")
+        video_path = meta_path.parent / f"{job_id}_output.mp4"
+        qc_path = meta_path.parent / f"{job_id}_qc.json"
 
-        video_path = qc_manifest_path.parent / Path(qc["output_file"]).name
         if not video_path.exists():
-            # Check same folder as manifest
-            video_path = qc_manifest_path.parent / f"{qc.get('job_id')}_output.mp4"
+            logger.error(f"[!] Missing video file for {job_id}")
+            continue
 
-        title = seed.get("headline", "Untitled")
-        desc = f"{title}\n\n#Shorts"
-        video_hash = qc.get("sha256", "hash_placeholder")
+        # Extract seed index to match with the correct channel
+        seed_index = 0
+        if qc_path.exists():
+            qc_data = json.loads(qc_path.read_text(encoding="utf-8"))
+            seed_index = qc_data.get("seed_index", 0)
+            if not qc_data.get("passed", False):
+                logger.warning(f"[-] QC failed for {job_id}, skipping publish.")
+                continue
 
-        # 1. YouTube Upload
-        account = route["youtube_account"]
-        target_yt = f"youtube_{account}"
+        meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
+        title = meta_data.get("title", "Reddit Story")
+        description = meta_data.get("description", "")
+        
+        yt_account = ROUTES.get(seed_index, 1)
+
+        logger.info(f"[*] Routing Video {job_id} -> YouTube Account {yt_account}")
         try:
-            logger.info(f"[+] Publishing Seed {seed_index} to YouTube Account {account}...")
-            vid_id, chan_id = upload_to_youtube_channel(account, str(video_path), title, desc)
-            logger.info(f"[SUCCESS] YouTube Account {account} uploaded: Video ID {vid_id}")
-            update_target_state(video_hash, target_yt, "SUCCESS", platform_id=vid_id)
+            upload_to_youtube_channel(yt_account, str(video_path), title, description)
         except Exception as e:
-            logger.error(f"[FAIL] YouTube Account {account} upload error: {e}")
-
-        # 2. Instagram Upload
-        if route.get("instagram"):
-            logger.info(f"[+] Publishing Seed {seed_index} to Instagram...")
-            release_tag = f"temp-ig-{seed_index}-{int(time.time())}"
-            try:
-                subprocess.run(["gh", "release", "create", release_tag, str(video_path), "--title", release_tag, "--notes", "Temp IG Asset"], check=True)
-                repo = os.getenv("GITHUB_REPOSITORY")
-                public_url = f"https://github.com/{repo}/releases/download/{release_tag}/{video_path.name}"
-                
-                ig_id = publish_instagram_reel(public_url, desc)
-                logger.info(f"[SUCCESS] Instagram Reel published: ID {ig_id}")
-                update_target_state(video_hash, "instagram", "SUCCESS", platform_id=ig_id)
-            except Exception as e:
-                logger.error(f"[FAIL] Instagram upload error: {e}")
-            finally:
-                subprocess.run(["gh", "release", "delete", release_tag, "--cleanup-tag", "-y"], check=False)
+            logger.error(f"[!] Failed to upload {job_id} to Account {yt_account}: {e}")
 
 if __name__ == "__main__":
     main()
