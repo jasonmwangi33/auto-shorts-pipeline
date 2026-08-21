@@ -4,7 +4,7 @@ import subprocess
 import numpy as np
 from pathlib import Path
 from moviepy.editor import VideoFileClip, VideoClip
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
 # Curated pool of high-quality, copyright-free / CC background loops
 ONLINE_BACKGROUND_SOURCES = [
@@ -35,7 +35,6 @@ class VisualGenerator:
         print(f"[*] Fetching satisfying online footage slice from: {chosen_source}")
         start_sec = random.choice([30, 60, 120, 180])
         end_sec = start_sec + int(target_duration) + 15
-        section_str = f"*{start_sec:02d}:00-{end_sec:02d}:00"
 
         cmd = [
             "yt-dlp",
