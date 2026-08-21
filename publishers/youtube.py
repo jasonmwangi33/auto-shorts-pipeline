@@ -1,78 +1,50 @@
 import json
 import os
-import random
-import time
-from google.oauth2.credentials import Credentials
+import logging
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from googleapiclient.errors import HttpError
+from google.oauth2.credentials import Credentials
 
-def upload_to_youtube_channel(account_num, video_path, title, description):
-    raw_bundle = os.environ.get("YOUTUBE_ACCOUNTS_JSON")
-    if not raw_bundle:
-        raise ValueError("Missing YOUTUBE_ACCOUNTS_JSON in environment variables.")
+logger = logging.getLogger("youtube_publisher")
 
-    accounts_list = json.loads(raw_bundle)
-    
-    # Find the specific account in the JSON bundle
-    target_account = next((acc for acc in accounts_list if acc.get("account_num") == account_num), None)
-    if not target_account:
-        raise ValueError(f"Account #{account_num} configuration not found in YOUTUBE_ACCOUNTS_JSON")
+def upload_to_youtube_channel(account_num: int, video_path: str, title: str, description: str):
+    bundle_json = os.getenv("YOUTUBE_ACCOUNTS_JSON")
+    if not bundle_json:
+        raise ValueError("YOUTUBE_ACCOUNTS_JSON secret is not set in environment.")
 
-    client_id = target_account.get("client_id")
-    client_secret = target_account.get("client_secret")
-    refresh_token = target_account.get("refresh_token")
+    accounts = json.loads(bundle_json)
+    acc_key = str(account_num)
+    if acc_key not in accounts:
+        raise ValueError(f"Account {account_num} not found in YOUTUBE_ACCOUNTS_JSON bundle.")
 
+    acc_data = accounts[acc_key]
     creds = Credentials(
         token=None,
-        refresh_token=refresh_token,
-        client_id=client_id,
-        client_secret=client_secret,
-        token_uri="https://oauth2.googleapis.com/token"
+        refresh_token=acc_data["refresh_token"],
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=acc_data["client_id"],
+        client_secret=acc_data["client_secret"]
     )
 
     youtube = build("youtube", "v3", credentials=creds)
 
-    # Verify channel identity
-    channel_res = youtube.channels().list(part="id,snippet", mine=True).execute()
-    items = channel_res.get("items", [])
-    if not items:
-        raise RuntimeError(f"[YT{account_num}] Could not retrieve channel info.")
-
-    actual_channel_id = items[0]["id"]
-    channel_title = items[0]["snippet"]["title"]
-    print(f"[YT{account_num}] Verified: '{channel_title}' ({actual_channel_id})")
-
     body = {
-        "snippet": {"title": title, "description": description, "categoryId": "22"},
-        "status": {"privacyStatus": "private", "selfDeclaredMadeForKids": False}
+        "snippet": {
+            "title": title[:100],
+            "description": description[:4000],
+            "tags": ["Shorts", "RedditStories", "Viral"],
+            "categoryId": "24"
+        },
+        "status": {
+            "privacyStatus": "public",
+            "selfDeclaredMadeForKids": False
+        }
     }
 
-    media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
-    request = youtube.videos().insert(part=",".join(body.keys()), body=body, media_body=media)
-
-    response = None
-    max_retries = 5
-    retry_count = 0
-
-    while response is None:
-        try:
-            status, response = request.next_chunk()
-            if status:
-                print(f"[YT{account_num}] Upload progress: {int(status.progress() * 100)}%")
-        except HttpError as e:
-            if e.resp.status in [500, 502, 503, 504]:
-                retry_count += 1
-                if retry_count > max_retries:
-                    raise RuntimeError(f"[YT{account_num}] Max retries exceeded: {e}")
-                sleep_time = (2 ** retry_count) + random.uniform(0.5, 1.5)
-                print(f"[YT{account_num}] Retrying in {sleep_time:.2f}s...")
-                time.sleep(sleep_time)
-            elif e.resp.status == 403 and "quotaExceeded" in str(e):
-                raise RuntimeError(f"[YT{account_num}] Quota exceeded: {e}")
-            else:
-                raise RuntimeError(f"[YT{account_num}] HTTP Error: {e}")
+    media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True)
+    request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+    response = request.execute()
 
     video_id = response.get("id")
-    print(f"[YT{account_num}] Upload successful! Video ID: {video_id}")
-    return video_id, actual_channel_id
+    logger.info(f"Successfully uploaded video ID: {video_id} (Public) to Account {account_num}")
+    return video_id, acc_data.get("channel_id", "")

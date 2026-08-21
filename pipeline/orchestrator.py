@@ -2,16 +2,12 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Dict, Any
-from .config import deep_merge
 from .state import init_db, update_job_state, JobState
-from .analysis import MediaAnalyzer
 from .content_intelligence import ContentIntelligence
 from .decision_engine import DecisionEngine
 from .narration import NarrationEngine
 from .renderer import Renderer
 from .qc import QualityControl
-from .failure_analysis import FailureAnalyzer
-from .self_improvement import SelfImprovementEngine
 from .utils import json_load, json_dump
 from .models import AnalysisResult
 
@@ -34,6 +30,9 @@ class JobOrchestrator:
 
         update_job_state(job_id, JobState.DISCOVERED)
 
+        headline = seed_data.get("headline", "Trending Story")
+        subreddit = seed_data.get("subreddit", seed_data.get("topic", "r/AmItheAsshole"))
+
         # 1. Narration & Timings
         print(f"[*] Generating Narration for Job {job_id}...")
         narration_engine = NarrationEngine(self.config)
@@ -41,7 +40,6 @@ class JobOrchestrator:
         print(f"[+] Narration generated: {duration:.2f}s")
 
         # 2. Decision & EditPlan
-        headline = seed_data.get("headline", "Trending News")
         analysis = AnalysisResult(duration=duration, fps=30.0, width=1080, height=1920, has_audio=True)
         content_score = ContentIntelligence().score(script, {})
         decision = DecisionEngine(self.config)
@@ -51,14 +49,14 @@ class JobOrchestrator:
         print(f"[*] Rendering Video {job_id}...")
         renderer = Renderer(self.config)
         update_job_state(job_id, JobState.RENDERING)
-        render_result = renderer.render(plan, narration_path, output_dir, job_id)
+        render_result = renderer.render(plan, narration_path, output_dir, job_id, headline=headline, subreddit=subreddit)
 
         if not render_result.success:
             print(f"[!] Render failed: {render_result.errors}")
             update_job_state(job_id, JobState.FAILED)
             return
 
-        # 4. Thumbnail & Metadata Extraction
+        # 4. Thumbnail & Metadata
         thumbnail_path = output_dir / f"{job_id}_thumbnail.jpg"
         metadata_path = output_dir / f"{job_id}_metadata.json"
         
@@ -68,14 +66,13 @@ class JobOrchestrator:
         )
 
         metadata = {
-            "title": headline[:60],
-            "description": f"{script}\\n\\n#Shorts #Trending #News",
-            "hashtags": ["#shorts", "#trending", "#news"]
+            "title": headline[:70],
+            "description": f"{script}\n\n#Shorts #RedditStories #AITA #Drama",
+            "hashtags": ["#shorts", "#redditstories", "#aita"]
         }
         json_dump(metadata, metadata_path)
 
-        # 5. Quality Control & Manifest
-        print(f"[*] Running QC on {job_id}...")
+        # 5. Quality Control Manifest
         qc = QualityControl(self.config)
         qc_result = qc.run(Path(render_result.output_path), thumbnail_path, metadata_path, output_dir)
         

@@ -3,7 +3,7 @@ Pillow==9.5.0
 edge-tts
 numpy==1.26.4
 requests==2.31.0
-python-dotenv==1.0.0
-sqlalchemy==2.0.23
-pytest==7.4.3
 feedparser==6.0.11
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
