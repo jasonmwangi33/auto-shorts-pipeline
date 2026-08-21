@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import ImageClip
+from typing import Any
 
 FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
