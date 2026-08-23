@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
   PYTHON_VERSION: '3.10'
 
 jobs:
