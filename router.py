@@ -8,10 +8,12 @@ from publishers.youtube import upload_to_youtube_channel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("router")
 
-# FIX: Route all 7 parallel renders to the 1 available account
 ROUTES = {
-    0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1
+    0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7
 }
+
+# The pool of all available YouTube accounts
+ALL_ACCOUNTS = [1, 2, 3, 4, 5, 6, 7]
 
 def load_state(state_file: Path) -> dict:
     if state_file.exists():
@@ -45,6 +47,10 @@ def main():
     c_failed = 0
     c_skipped = 0
 
+    # Track which accounts have successfully received a video this run
+    # to guarantee we keep them spread out (1 video per account)
+    used_accounts = set()
+
     logger.info(f"[*] Discovered {c_discovered} metadata files for publishing evaluation.")
 
     for meta_path in metadata_files:
@@ -74,19 +80,37 @@ def main():
         meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
         title = meta_data.get("title", "Relatable Thoughts")
         description = meta_data.get("description", "")
-        yt_account = ROUTES.get(seed_index, 1)
+        
+        # Determine the primary target account
+        primary_account = ROUTES.get(seed_index, 1)
+        
+        # Build the fallback queue: Try primary first, then all other accounts
+        fallback_queue = [primary_account] + [acc for acc in ALL_ACCOUNTS if acc != primary_account]
+        
+        uploaded_successfully = False
 
-        logger.info(f"[*] Initiating Upload: Video {job_id} -> YouTube Account {yt_account}")
-        try:
-            video_id, channel_id = upload_to_youtube_channel(yt_account, str(video_path), title, description)
-            logger.info(f"[SUCCESS] {job_id} live at https://youtube.com/shorts/{video_id}")
-            
-            published_state[job_id] = {"video_id": video_id, "channel": channel_id}
-            save_state(state_file, published_state)
-            c_uploaded += 1
-            
-        except Exception as e:
-            logger.error(f"[FAIL] Raw API Exception for {job_id} to Account {yt_account}: {str(e)}")
+        for yt_account in fallback_queue:
+            if yt_account in used_accounts:
+                continue # Skip accounts that already got a video to ensure spread
+
+            logger.info(f"[*] Initiating Upload: Video {job_id} -> YouTube Account {yt_account}")
+            try:
+                video_id, channel_id = upload_to_youtube_channel(yt_account, str(video_path), title, description)
+                logger.info(f"[SUCCESS] {job_id} live at https://youtube.com/shorts/{video_id}")
+                
+                published_state[job_id] = {"video_id": video_id, "channel": channel_id}
+                save_state(state_file, published_state)
+                
+                used_accounts.add(yt_account) # Lock this account so it doesn't get duplicate videos
+                c_uploaded += 1
+                uploaded_successfully = True
+                break # Success! Break out of the fallback loop and move to the next video
+                
+            except Exception as e:
+                logger.warning(f"[-] Upload failed for Account {yt_account}: {str(e)}. Attempting next backup account...")
+
+        if not uploaded_successfully:
+            logger.error(f"[FAIL] Video {job_id} exhausted all backup accounts. Could not be uploaded.")
             c_failed += 1
 
     print("\n================ PUBLISH SUMMARY ================")
