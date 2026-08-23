@@ -8,8 +8,9 @@ from publishers.youtube import upload_to_youtube_channel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("router")
 
+# FIX: Route all 7 parallel renders to the 1 available account
 ROUTES = {
-    0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7
+    0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1
 }
 
 def load_state(state_file: Path) -> dict:
@@ -39,7 +40,6 @@ def main():
         logger.warning("No metadata files found. Nothing to publish.")
         return
 
-    # Transaction Trackers
     c_discovered = len(metadata_files)
     c_uploaded = 0
     c_failed = 0
@@ -52,13 +52,11 @@ def main():
         video_path = meta_path.parent / f"{job_id}_output.mp4"
         qc_path = meta_path.parent / f"{job_id}_qc.json"
 
-        # 1. State Check
         if job_id in published_state:
             logger.info(f"[SKIP] Video {job_id} is already marked as published in state file.")
             c_skipped += 1
             continue
 
-        # 2. Validation
         if not video_path.exists():
             logger.error(f"[FAIL] Missing video payload for {job_id}")
             c_failed += 1
@@ -70,7 +68,6 @@ def main():
             seed_index = qc_data.get("seed_index", 0)
             if not qc_data.get("passed", False):
                 logger.warning(f"[SKIP] QC explicitly failed for {job_id}. Bypassing upload.")
-                # We skip rather than fail the job, because the render pipeline already flagged it.
                 c_skipped += 1
                 continue
 
@@ -79,28 +76,23 @@ def main():
         description = meta_data.get("description", "")
         yt_account = ROUTES.get(seed_index, 1)
 
-        # 3. Execution
         logger.info(f"[*] Initiating Upload: Video {job_id} -> YouTube Account {yt_account}")
         try:
             video_id, channel_id = upload_to_youtube_channel(yt_account, str(video_path), title, description)
             logger.info(f"[SUCCESS] {job_id} live at https://youtube.com/shorts/{video_id}")
             
-            # 4. State Update
             published_state[job_id] = {"video_id": video_id, "channel": channel_id}
             save_state(state_file, published_state)
             c_uploaded += 1
             
         except Exception as e:
-            # 5. Raw API Error Visibility
             logger.error(f"[FAIL] Raw API Exception for {job_id} to Account {yt_account}: {str(e)}")
             c_failed += 1
 
-    # 6. Final Strict Accounting
     print("\n================ PUBLISH SUMMARY ================")
     print(f"{c_discovered} discovered | {c_uploaded} uploaded | {c_skipped} skipped | {c_failed} failed")
     print("=================================================\n")
 
-    # Exit 0 ONLY if everything required succeeded
     if c_failed > 0 or (c_uploaded + c_skipped < c_discovered):
         logger.error("Publishing constraints not met. Exiting with fatal code.")
         sys.exit(1)

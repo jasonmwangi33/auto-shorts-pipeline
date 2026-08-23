@@ -13,11 +13,16 @@ def upload_to_youtube_channel(account_num: int, video_path: str, title: str, des
         raise ValueError("YOUTUBE_ACCOUNTS_JSON secret is missing from GitHub environment.")
 
     accounts = json.loads(bundle_json)
-    acc_key = str(account_num)
-    if acc_key not in accounts:
-        raise ValueError(f"Account {account_num} not found in bundle.")
+    
+    # SMART FALLBACK: If the user provided a single credential object instead of a numbered bundle
+    if "client_id" in accounts:
+        acc_data = accounts
+    else:
+        acc_key = str(account_num)
+        if acc_key not in accounts:
+            raise ValueError(f"Account {account_num} not found in bundle.")
+        acc_data = accounts[acc_key]
 
-    acc_data = accounts[acc_key]
     creds = Credentials(
         token=None,
         refresh_token=acc_data["refresh_token"],
@@ -32,11 +37,11 @@ def upload_to_youtube_channel(account_num: int, video_path: str, title: str, des
         "snippet": {
             "title": title[:100],
             "description": description[:4000],
-            "tags": ["Shorts", "RedditStories", "StoryTime", "Viral"],
+            "tags": ["Shorts", "RedditStories", "Viral"],
             "categoryId": "24"
         },
         "status": {
-            "privacyStatus": "public",  # FIX: Forces video to be public immediately
+            "privacyStatus": "public",
             "selfDeclaredMadeForKids": False
         }
     }
@@ -46,5 +51,5 @@ def upload_to_youtube_channel(account_num: int, video_path: str, title: str, des
     response = request.execute()
 
     video_id = response.get("id")
-    logger.info(f"[SUCCESS] Uploaded to YouTube Account {account_num}. Video ID: {video_id}")
+    logger.info(f"[SUCCESS] Uploaded to YouTube. Video ID: {video_id}")
     return video_id, acc_data.get("channel_id", "")
