@@ -18,16 +18,16 @@ DEFAULT_CONFIG = {
         "fade_duration": 0.2
     },
     "subtitles": {
-        "font_size": 80,
+        "font_size": 85,
         "color": [255, 255, 255],
         "stroke_color": [0, 0, 0],
-        "stroke_width": 6,
-        "bg_color": [0, 0, 0],
-        "bg_opacity": 0.65,
-        "position": 0.68,
+        "stroke_width": 7,
+        "bg_color": None, 
+        "bg_opacity": 0.0,
+        "position": 0.50, # Moved to true center
         "max_width": 950,
-        "max_words_per_phrase": 3,
-        "max_phrase_duration": 1.6
+        "max_words_per_phrase": 2, # Strict 1-2 word limit
+        "max_phrase_duration": 0.8
     },
     "narration": {
         "tts_voice": "en-US-ChristopherNeural",

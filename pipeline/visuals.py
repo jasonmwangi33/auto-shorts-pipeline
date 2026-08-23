@@ -1,101 +1,130 @@
 import os
 import random
-import subprocess
+import requests
 import numpy as np
 from pathlib import Path
-from moviepy.editor import VideoFileClip, VideoClip
-from typing import Tuple, Dict, Any, Optional
+from moviepy.editor import VideoFileClip, VideoClip, concatenate_videoclips
+from typing import Tuple, Dict, Any, List
 
-# Curated pool of high-quality, copyright-free / CC background loops
-ONLINE_BACKGROUND_SOURCES = [
-    # Minecraft Parkour Loops
-    "https://www.youtube.com/watch?v=n_Dv4JMiwK8",
-    "https://www.youtube.com/watch?v=qWbHSO_4x4U",
-    # ASMR Cooking & Satisfying Food Prep
-    "https://www.youtube.com/watch?v=7X8II6J-6mU",
-    # Satisfying Kinetic Cutting / Sand
-    "https://www.youtube.com/watch?v=gX_Qy3rLw8w"
-]
+class BackgroundProvider:
+    def get_clips(self, theme: str, count: int) -> List[str]:
+        raise NotImplementedError
+
+class PexelsBackgroundProvider(BackgroundProvider):
+    def __init__(self):
+        self.api_key = os.environ.get("PEXELS_API_KEY", "")
+        self.cache_dir = Path("data/bg_cache")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def get_clips(self, theme: str, count: int) -> List[str]:
+        if not self.api_key:
+            print("[-] PEXELS_API_KEY not found. Skipping Pexels provider.")
+            return []
+            
+        print(f"[*] Fetching '{theme}' footage from Pexels API...")
+        headers = {"Authorization": self.api_key}
+        url = f"https://api.pexels.com/videos/search?query={theme}&orientation=portrait&size=medium&per_page=15"
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            downloaded = []
+            for video in data.get("videos", [])[:count]:
+                files = video.get("video_files", [])
+                if not files: continue
+                
+                # Grab a solid mp4 link
+                link = next((f["link"] for f in files if f["file_type"] == "video/mp4"), files[0]["link"])
+                video_id = video["id"]
+                out_path = self.cache_dir / f"pexels_{video_id}.mp4"
+                
+                if not out_path.exists():
+                    vid_resp = requests.get(link, stream=True, timeout=15)
+                    with open(out_path, 'wb') as f:
+                        for chunk in vid_resp.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                downloaded.append(str(out_path))
+            return downloaded
+        except Exception as e:
+            print(f"[-] Pexels API failure: {e}")
+            return []
+
+class PreloadedBackgroundProvider(BackgroundProvider):
+    def __init__(self):
+        self.local_dir = Path("assets/backgrounds")
+
+    def get_clips(self, theme: str, count: int) -> List[str]:
+        if not self.local_dir.exists():
+            return []
+        files = []
+        for ext in ("*.mp4", "*.mov"):
+            files.extend([str(p) for p in self.local_dir.glob(ext)])
+        random.shuffle(files)
+        return files[:count]
 
 class VisualGenerator:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.cache_dir = Path("data/bg_cache")
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.providers = [PexelsBackgroundProvider(), PreloadedBackgroundProvider()]
 
-    def fetch_online_background(self, target_duration: float) -> Optional[Path]:
-        """Downloads a fast 60s section of satisfying footage directly on the cloud runner."""
-        chosen_source = random.choice(ONLINE_BACKGROUND_SOURCES)
-        cache_id = f"bg_{abs(hash(chosen_source)) % 10000}"
-        out_file = self.cache_dir / f"{cache_id}.mp4"
-
-        if out_file.exists() and out_file.stat().st_size > 100000:
-            return out_file
-
-        print(f"[*] Fetching satisfying online footage slice from: {chosen_source}")
-        start_sec = random.choice([30, 60, 120, 180])
-        end_sec = start_sec + int(target_duration) + 15
-
-        cmd = [
-            "yt-dlp",
-            "--no-check-certificates",
-            "--download-sections", f"*{start_sec}-{end_sec}",
-            "-f", "bestvideo[height<=1080][ext=mp4]/best[height<=1080]",
-            "-o", str(out_file),
-            chosen_source
-        ]
-
-        try:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=True)
-            if out_file.exists() and out_file.stat().st_size > 100000:
-                return out_file
-        except Exception as e:
-            print(f"[-] yt-dlp download failed ({e}). Trying fallback...")
-
-        return None
-
-    def get_background_clip(self, duration: float, size: Tuple[int, int] = (1080, 1920)) -> VideoClip:
+    def get_hypercut_background(self, duration: float, theme: str, size: Tuple[int, int] = (1080, 1920)) -> VideoClip:
         target_w, target_h = size
+        raw_clips = []
         
-        # 1. Check local assets/backgrounds folder first if user provided any
-        local_dir = Path("assets/backgrounds")
-        bg_files = []
-        if local_dir.exists():
-            for ext in ("*.mp4", "*.mov", "*.mkv", "*.webm"):
-                bg_files.extend(list(local_dir.glob(ext)))
+        # Try providers in order
+        for provider in self.providers:
+            raw_clips = provider.get_clips(theme, count=10)
+            if len(raw_clips) > 0:
+                break
+                
+        if not raw_clips:
+            # Loud failure instead of silent gradient fallback
+            raise RuntimeError(f"CRITICAL FAILURE: No background footage could be sourced for theme '{theme}'. Render aborted.")
 
-        bg_path = random.choice(bg_files) if bg_files else self.fetch_online_background(duration)
+        assembled_clips = []
+        current_dur = 0.0
+        last_clip = None
 
-        if bg_path and Path(bg_path).exists():
+        print(f"[*] Assembling hyper-cut background ({duration}s target)")
+        
+        # Hyper-cut assembly loop (2 to 4 second cuts)
+        while current_dur < duration:
+            available = [c for c in raw_clips if c != last_clip]
+            if not available:
+                available = raw_clips # Fallback if only 1 clip exists
+                
+            chosen_file = random.choice(available)
+            last_clip = chosen_file
+            
             try:
-                clip = VideoFileClip(str(bg_path), audio=False)
-                if clip.duration > duration + 1.0:
-                    start_t = random.uniform(0, max(0.1, clip.duration - duration - 0.5))
-                    clip = clip.subclip(start_t, start_t + duration)
+                clip = VideoFileClip(chosen_file, audio=False)
+                cut_length = random.uniform(2.0, 4.0)
+                
+                # Ensure we don't request more time than the clip has
+                if clip.duration <= cut_length:
+                    segment = clip
                 else:
-                    clip = clip.loop(duration=duration)
-
-                # Center-crop to 9:16 vertical ratio
-                orig_w, orig_h = clip.size
+                    start_t = random.uniform(0, clip.duration - cut_length)
+                    segment = clip.subclip(start_t, start_t + cut_length)
+                
+                # Apply vertical math
+                orig_w, orig_h = segment.size
                 scale_factor = max(target_w / orig_w, target_h / orig_h)
-                clip = clip.resize(scale_factor)
-                clip = clip.crop(x_center=clip.w / 2, y_center=clip.h / 2, width=target_w, height=target_h)
-                return clip
+                segment = segment.resize(scale_factor)
+                segment = segment.crop(x_center=segment.w / 2, y_center=segment.h / 2, width=target_w, height=target_h)
+                
+                assembled_clips.append(segment)
+                current_dur += segment.duration
             except Exception as e:
-                print(f"[-] Error processing background clip: {e}. Falling back to smooth motion.")
-
-        # Procedural fallback if offline / network throttled
-        def make_frame(t):
-            x = np.linspace(0, 1, target_w)[None, :]
-            y = np.linspace(0, 1, target_h)[:, None]
-            r = 0.12 + 0.15 * np.sin(2 * np.pi * (x + 0.08 * t)) + 0.08 * np.cos(2 * np.pi * (y + 0.04))
-            g = 0.06 + 0.15 * np.sin(2 * np.pi * (y + 0.05 * t)) + 0.08 * np.cos(2 * np.pi * (x + 0.02))
-            b = 0.22 + 0.20 * np.sin(2 * np.pi * (x * 0.5 + y * 0.5 + 0.03 * t))
-            frame = np.stack([r, g, b], axis=2)
-            return (np.clip(frame, 0, 1) * 255).astype(np.uint8)
-
-        base = VideoClip(make_frame, duration=duration)
-        return base.resize(lambda t: 1 + 0.08 * (t / duration)).crop(x_center=target_w / 2, y_center=target_h / 2, width=target_w, height=target_h)
+                print(f"[-] Dropping corrupted clip {chosen_file}: {e}")
+                raw_clips.remove(chosen_file)
+                if not raw_clips:
+                     raise RuntimeError("CRITICAL FAILURE: All sourced clips were corrupted.")
+        
+        final_bg = concatenate_videoclips(assembled_clips, method="compose")
+        return final_bg.set_duration(duration)
 
     def generate_progress_bar(self, duration: float, size: Tuple[int, int] = (1080, 1920)) -> VideoClip:
         w, h = size

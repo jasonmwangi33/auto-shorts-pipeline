@@ -13,28 +13,28 @@ class Renderer:
         self.config = config
         self.visual_generator = VisualGenerator(config)
 
-    def render(self, plan: EditPlan, narration_audio_path: Path, output_dir: Path, job_id: str, headline: str = "", subreddit: str = "r/AmItheAsshole") -> RenderResult:
+    def render(self, plan: EditPlan, narration_audio_path: Path, output_dir: Path, job_id: str, headline: str = "", subreddit: str = "r/AmItheAsshole", visual_theme: str = "ASMR cooking") -> RenderResult:
         start = time.time()
         temp_dir = make_temp_dir(prefix=f"render_{job_id}")
         try:
             duration = plan.target_duration
             
-            # 1. Background Video Layer (Web gameplay / ASMR food slice)
-            bg_clip = self.visual_generator.get_background_clip(duration)
+            # 1. Hyper-Cut Background (Will raise error if no footage found)
+            bg_clip = self.visual_generator.get_hypercut_background(duration, theme=visual_theme)
             
             # 2. Scrubber Progress Bar
             progress_clip = self.visual_generator.generate_progress_bar(duration)
 
-            # 3. Reddit Stamp Overlay Card (0 to 3.5s)
+            # 3. Reddit Stamp (Top 10%)
             reddit_stamp = generate_reddit_stamp_clip(headline, subreddit=subreddit, duration=3.5)
 
-            # 4. Kinetic Pop Subtitles
+            # 4. Kinetic Subtitles (Max 2 words, True Center)
             subtitles = self._build_subtitles(plan, duration)
 
             # 5. Narration Audio
             audio_clip = AudioFileClip(str(narration_audio_path))
             
-            # 6. Composite & Compile
+            # 6. Composite
             all_clips = [bg_clip, progress_clip, reddit_stamp] + subtitles
             video = CompositeVideoClip(all_clips, size=(1080, 1920)).set_audio(audio_clip)
 
@@ -62,6 +62,7 @@ class Renderer:
                 success=True
             )
         except Exception as e:
+            print(f"[!] RENDER CRASH: {e}")
             return RenderResult(output_path="", duration=0, render_time=0, file_size=0, success=False, errors=[str(e)])
         finally:
             cleanup_temp_dir(temp_dir)
@@ -69,7 +70,8 @@ class Renderer:
     def _build_subtitles(self, plan: EditPlan, duration: float):
         subtitle_clips = []
         if plan.narration_word_timings:
-            phrases = self._group_words(plan.narration_word_timings, max_words=3, max_dur=1.6)
+            # Using exact word-boundary timing, packed into max 2 words
+            phrases = self._group_words(plan.narration_word_timings, max_words=plan.subtitles_config.get("max_words_per_phrase", 2), max_dur=plan.subtitles_config.get("max_phrase_duration", 0.8))
             for phrase_text, start, end in phrases:
                 if start >= duration:
                     continue
@@ -78,20 +80,21 @@ class Renderer:
                     continue
                 clip = create_text_clip(
                     phrase_text.upper(),
-                    fontsize=80,
-                    color=(255, 255, 255),
-                    stroke_color=(0, 0, 0),
-                    stroke_width=6,
-                    bg_color=(0, 0, 0),
-                    bg_opacity=0.65,
+                    fontsize=plan.subtitles_config.get("font_size", 85),
+                    color=tuple(plan.subtitles_config.get("color", [255, 255, 255])),
+                    stroke_color=tuple(plan.subtitles_config.get("stroke_color", [0, 0, 0])),
+                    stroke_width=plan.subtitles_config.get("stroke_width", 7),
+                    bg_color=None,
+                    bg_opacity=0.0,
                     max_width=950
                 )
-                clip = apply_pop_animation(clip, scale_factor=0.25, pop_duration=0.15)
-                clip = clip.set_start(start).set_duration(dur).set_position(("center", 0.68), relative=True)
+                clip = apply_pop_animation(clip, scale_factor=0.25, pop_duration=0.10)
+                # Positioned at true center
+                clip = clip.set_start(start).set_duration(dur).set_position(("center", plan.subtitles_config.get("position", 0.50)), relative=True)
                 subtitle_clips.append(clip)
         return subtitle_clips
 
-    def _group_words(self, word_timings, max_words=3, max_dur=1.6):
+    def _group_words(self, word_timings, max_words=2, max_dur=0.8):
         phrases, cur_words, cur_start, cur_end = [], [], None, None
         for item in word_timings:
             word, start, end = item["word"], item["start"], item["end"]

@@ -1,4 +1,5 @@
 import json
+import random
 import subprocess
 from pathlib import Path
 from typing import Dict, Any
@@ -7,6 +8,15 @@ from .narration import NarrationEngine
 from .renderer import Renderer
 from .utils import json_load, json_dump
 from .models import EditPlan
+
+# High-retention visual themes independent of the narrative
+VISUAL_THEMES = [
+    "ASMR cooking", 
+    "satisfying food preparation", 
+    "kinetic sand", 
+    "satisfying machinery", 
+    "satisfying cleaning"
+]
 
 class JobOrchestrator:
     def __init__(self, config: Dict[str, Any]):
@@ -29,14 +39,14 @@ class JobOrchestrator:
 
         headline = seed_data.get("headline", "Trending Story")
         subreddit = seed_data.get("subreddit", seed_data.get("topic", "r/AmItheAsshole"))
+        
+        # Select an independent visual theme
+        selected_theme = random.choice(VISUAL_THEMES)
 
-        # 1. Narration & Timestamps
         print(f"[*] Generating Narration for Job {job_id}...")
         narration_engine = NarrationEngine(self.config)
         script, duration, word_timings, narration_path = narration_engine.generate(seed_data, tts_dir, job_id)
-        print(f"[+] Narration generated: {duration:.2f}s")
-
-        # 2. EditPlan
+        
         plan = EditPlan(
             target_duration=duration,
             subtitles_config=self.config["subtitles"],
@@ -44,23 +54,25 @@ class JobOrchestrator:
             narration_word_timings=word_timings
         )
 
-        # 3. Render
-        print(f"[*] Rendering Video {job_id} with Online Satisfying Background...")
+        print(f"[*] Rendering {job_id} with independent visual theme: '{selected_theme}'")
         renderer = Renderer(self.config)
         update_job_state(job_id, JobState.RENDERING)
-        render_result = renderer.render(plan, narration_path, output_dir, job_id, headline=headline, subreddit=subreddit)
+        render_result = renderer.render(plan, narration_path, output_dir, job_id, headline=headline, subreddit=subreddit, visual_theme=selected_theme)
 
         if not render_result.success:
-            print(f"[!] Render failed: {render_result.errors}")
+            print(f"[!] Render fatally failed. Skipping QC and artifacts.")
             update_job_state(job_id, JobState.FAILED)
+            
+            # Write a failed QC manifest so the router knows to skip it
+            qc_manifest = {"job_id": job_id, "seed_index": seed_data.get("seed_index", 0), "passed": False, "score": 0.0}
+            json_dump(qc_manifest, output_dir / f"{job_id}_qc.json")
             return
 
-        # 4. Thumbnail & Metadata
         thumbnail_path = output_dir / f"{job_id}_thumbnail.jpg"
         metadata_path = output_dir / f"{job_id}_metadata.json"
         
         subprocess.run(
-            ["ffmpeg", "-y", "-ss", "1.0", "-i", render_result.output_path, "-frames:v", "1", "-q:v", "2", str(thumbnail_path)],
+            ["ffmpeg", "-y", "-ss", "2.0", "-i", render_result.output_path, "-frames:v", "1", "-q:v", "2", str(thumbnail_path)],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
@@ -71,7 +83,6 @@ class JobOrchestrator:
         }
         json_dump(metadata, metadata_path)
 
-        # 5. Quality Control Manifest
         qc_manifest = {
             "job_id": job_id,
             "seed_index": seed_data.get("seed_index", 0),
