@@ -1,8 +1,9 @@
-﻿#!/usr/bin/env python3
+﻿#!/usr/init/env python3
 import random
 import logging
+import os
 from pathlib import Path
-from moviepy.editor import VideoFileClip, concatenate_videoclips
+from moviepy.editor import VideoFileClip, concatenate_videoclips, ColorClip
 
 logger = logging.getLogger("visuals")
 APPROVED_CATEGORIES = [
@@ -19,6 +20,8 @@ APPROVED_CATEGORIES = [
 class VisualGenerator:
     def __init__(self, config: dict):
         self.config = config
+        # Safe environment check for background video API keys if configured
+        self.video_api_key = os.getenv("PEXELS_API_KEY") or os.getenv("VIDEO_API_KEY")
 
     def select_visual_theme(self) -> str:
         return random.choice(APPROVED_CATEGORIES)
@@ -30,12 +33,10 @@ class VisualGenerator:
                 files = [str(p) for p in base.glob("*.*") if p.suffix.lower() in [".mp4", ".mov", ".mkv"]]
                 if files: return random.choice(files)
         
-        # Fallback search across any available background folder if the specific theme has no assets
         fallback_root = Path("assets") / "backgrounds"
         if fallback_root.exists():
             all_files = [str(p) for p in fallback_root.glob("**/*.*") if p.suffix.lower() in [".mp4", ".mov", ".mkv"]]
             if all_files:
-                logger.warning("Category '%s' has no assets; falling back to available asset: %s", theme, all_files[0])
                 return random.choice(all_files)
         return ""
 
@@ -45,9 +46,6 @@ class VisualGenerator:
         while accumulated < target_duration_seconds:
             asset_path = self.fetch_category_asset(theme)
             if not asset_path or not Path(asset_path).exists():
-                # If still no assets, create a simple color background clip via moviepy as a last resort to prevent crashes
-                from moviepy.editor import ColorClip
-                logger.error("CRITICAL: No background assets found anywhere. Using fallback color clip.")
                 return ColorClip(size=(1080, 1920), color=(20, 20, 20)).set_duration(target_duration_seconds)
                 
             clip = VideoFileClip(asset_path)
@@ -59,7 +57,6 @@ class VisualGenerator:
             accumulated += segment
             
         if not subclips: 
-            from moviepy.editor import ColorClip
             return ColorClip(size=(1080, 1920), color=(20, 20, 20)).set_duration(target_duration_seconds)
             
         final_bg = concatenate_videoclips(subclips, method="compose")
@@ -69,7 +66,6 @@ class VisualGenerator:
         return final_bg.subclip(0, target_duration_seconds)
 
     def generate_progress_bar(self, duration: float):
-        from moviepy.editor import ColorClip
         return ColorClip(size=(1080, 15), color=(255, 255, 255)).set_duration(duration)
 
 def select_visual_theme() -> str:
