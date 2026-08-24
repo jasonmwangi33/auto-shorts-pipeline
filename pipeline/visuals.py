@@ -21,10 +21,10 @@ VISUAL_REGISTRY = {
     "food": {
         "keywords": ["cooking", "food", "restaurant", "baking", "recipe", "eat", "taste", "chef", "kitchen", "meal", "daughter", "family", "house", "wife", "husband", "date", "girl", "friend", "work", "job"],
         "queries": [
-            "juicy steak searing macro close up slow motion",
-            "cheese pulling dripping stretching macro food",
-            "molten chocolate pouring macro baking overhead",
-            "crispy frying food close up sizzling ASMR"
+            "overhead macro food preparation slicing chopping no face",
+            "juicy steak searing close up sizzling ASMR vertical",
+            "cheese pulling dripping stretching macro food preparation",
+            "molten chocolate pouring macro baking overhead close up"
         ],
         "local_dir": "assets/backgrounds/food",
         "pexels_enabled": True
@@ -133,10 +133,11 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
                 clip.close()
                 continue
                 
-            # SPEED UP BACKGROUND BY 2X for high-energy motion
+            # 2x speedup for high-energy motion
             clip = clip.speedx(2.0)
             source_readers.append(clip)
             
+            # Fast 1.5 to 3.0 second cuts
             seg_dur = min(round(random.uniform(1.5, 3.0), 2), clip.duration)
             if accumulated + seg_dur > duration:
                 seg_dur = duration - accumulated

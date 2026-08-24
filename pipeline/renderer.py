@@ -1,117 +1,87 @@
-﻿
-import os
-try:
-    os.environ['IMAGEMAGICK_BINARY'] = '/usr/bin/convert'
-except:
-    pass
-import time
-from pathlib import Path
-from typing import Dict, Any
-from moviepy.editor import AudioFileClip, CompositeVideoClip
-from .models import EditPlan, RenderResult
-from .visuals import VisualGenerator
-from .reddit_card import generate_reddit_stamp_clip
-from .subtitle import create_text_clip, apply_pop_animation
-from .utils import make_temp_dir, cleanup_temp_dir
+﻿import os
+import logging
+from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip, TextClip, concatenate_videoclips
+from pipeline.visuals import VisualGenerator
+
+logger = logging.getLogger("renderer")
 
 class Renderer:
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self.visual_generator = VisualGenerator(config)
+    def __init__(self, config=None):
+        self.config = config or {}
+        self.visual_gen = VisualGenerator()
 
-    def render(self, plan: EditPlan, narration_audio_path: Path, output_dir: Path, job_id: str, headline: str = "", subreddit: str = "r/AmItheAsshole", visual_theme: str = "ASMR cooking") -> RenderResult:
-        start = time.time()
-        temp_dir = make_temp_dir(prefix=f"render_{job_id}")
-        try:
-            duration = plan.target_duration
+    def render_short(self, seed: dict, output_path: str):
+        """Renders the short with fast-paced 2x background, clear audio, and centered bold kinetic captions (1-2 words)."""
+        logger.info(f"Starting render for seed: {seed.get('id', 'unknown')}")
+        
+        audio_path = seed.get("audio_path")
+        script_text = seed.get("script", seed.get("story", "This is a story."))
+        
+        if not audio_path or not os.path.exists(audio_path):
+            raise RuntimeError(f"Audio file missing for render: {audio_path}")
             
-            # 1. Hyper-Cut Background (Will raise error if no footage found)
-            bg_clip = self.visual_generator.get_hypercut_background(duration, theme=visual_theme)
+        audio_clip = AudioFileClip(audio_path)
+        duration = audio_clip.duration
+        
+        # Generate background
+        bg_clip = self.visual_gen.generate_background(duration, seed)
+        bg_clip = bg_clip.set_audio(audio_clip)
+        
+        # Generate Progress Bar
+        progress_bar = self.visual_gen.generate_progress_bar(duration)
+        
+        # Kinetic Subtitle Generation (1-2 words centered, bold white with black outline styling)
+        clips_to_compose = [bg_clip, progress_bar]
+        
+        words = script_text.split()
+        if words:
+            word_duration = duration / len(words)
+            # Group words into chunks of 1 to 2 words for rapid reference-style flashing
+            chunk_size = 2
+            word_chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+            chunk_duration = duration / len(word_chunks)
             
-            # 2. Scrubber Progress Bar
-            progress_clip = self.visual_generator.generate_progress_bar(duration)
-
-            # 3. Reddit Stamp (Top 10%)
-            reddit_stamp = generate_reddit_stamp_clip(headline, subreddit=subreddit, duration=3.5)
-
-            # 4. Kinetic Subtitles (Max 2 words, True Center)
-            subtitles = self._build_subtitles(plan, duration)
-
-            # 5. Narration Audio
-            audio_clip = AudioFileClip(str(narration_audio_path))
-            
-            # 6. Composite
-            all_clips = [bg_clip, progress_clip, reddit_stamp] + subtitles
-            video = CompositeVideoClip(all_clips, size=(1080, 1920)).set_audio(audio_clip)
-
-            output_path = output_dir / f"{job_id}_output.mp4"
-            video.write_videofile(
-                str(output_path),
-                fps=30,
-                codec="libx264",
-                audio_codec="aac",
-                preset="ultrafast",
-                threads=4,
-                logger=None
-            )
-            render_time = time.time() - start
-            file_size = output_path.stat().st_size
-
-            video.close()
-            audio_clip.close()
-
-            return RenderResult(
-                output_path=str(output_path),
-                duration=duration,
-                render_time=render_time,
-                file_size=file_size,
-                success=True
-            )
-        except Exception as e:
-            print(f"[!] RENDER CRASH: {e}")
-            return RenderResult(output_path="", duration=0, render_time=0, file_size=0, success=False, errors=[str(e)])
-        finally:
-            cleanup_temp_dir(temp_dir)
-
-    def _build_subtitles(self, plan: EditPlan, duration: float):
-        subtitle_clips = []
-        if plan.narration_word_timings:
-            # Using exact word-boundary timing, packed into max 2 words
-            phrases = self._group_words(plan.narration_word_timings, max_words=plan.subtitles_config.get("max_words_per_phrase", 2), max_dur=plan.subtitles_config.get("max_phrase_duration", 0.8))
-            for phrase_text, start, end in phrases:
-                if start >= duration:
+            current_time = 0.0
+            for chunk in word_chunks:
+                if not chunk.strip():
+                    current_time += chunk_duration
                     continue
-                dur = min(end - start + 0.1, duration - start)
-                if dur <= 0.05:
-                    continue
-                clip = create_text_clip(
-                    phrase_text.upper(),
-                    fontsize=plan.subtitles_config.get("font_size", 85),
-                    color=tuple(plan.subtitles_config.get("color", [255, 255, 255])),
-                    stroke_color=tuple(plan.subtitles_config.get("stroke_color", [0, 0, 0])),
-                    stroke_width=plan.subtitles_config.get("stroke_width", 7),
-                    bg_color=None,
-                    bg_opacity=0.0,
-                    max_width=950
-                )
-                clip = apply_pop_animation(clip, scale_factor=0.25, pop_duration=0.10)
-                # Positioned at true center
-                clip = clip.set_start(start).set_duration(dur).set_position(("center", plan.subtitles_config.get("position", 0.50)), relative=True)
-                subtitle_clips.append(clip)
-        return subtitle_clips
+                try:
+                    txt_clip = TextClip(
+                        chunk.upper(),
+                        fontsize=75,
+                        color='white',
+                        stroke_color='black',
+                        stroke_width=4,
+                        font='Arial-Bold',
+                        size=(1000, None),
+                        method='caption'
+                    ).set_start(current_time).set_duration(min(chunk_duration, duration - current_time)).set_position(('center', 'center'))
+                    
+                    clips_to_compose.append(txt_clip)
+                except Exception as ex:
+                    logger.warning(f"Failed to render subtitle chunk '{chunk}': {ex}")
+                current_time += chunk_duration
 
-    def _group_words(self, word_timings, max_words=2, max_dur=0.8):
-        phrases, cur_words, cur_start, cur_end = [], [], None, None
-        for item in word_timings:
-            word, start, end = item["word"], item["start"], item["end"]
-            if cur_start is None:
-                cur_start = start
-            cur_words.append(word)
-            cur_end = end
-            if len(cur_words) >= max_words or (cur_end - cur_start) >= max_dur:
-                phrases.append((" ".join(cur_words), cur_start, cur_end))
-                cur_words, cur_start, cur_end = [], None, None
-        if cur_words:
-            phrases.append((" ".join(cur_words), cur_start, cur_end))
-        return phrases
-
+        final_composite = CompositeVideoClip(clips_to_compose, size=(1080, 1920))
+        
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        final_composite.write_videofile(
+            output_path,
+            fps=30,
+            codec='libx264',
+            audio_codec='aac',
+            preset='medium',
+            threads=4
+        )
+        
+        # Cleanup readers
+        audio_clip.close()
+        bg_clip.close()
+        if hasattr(bg_clip, 'source_readers'):
+            for reader in bg_clip.source_readers:
+                try: reader.close()
+                except: pass
+                
+        logger.info(f"Successfully rendered video to {output_path}")
+        return output_path
