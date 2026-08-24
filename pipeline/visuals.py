@@ -1,11 +1,17 @@
-﻿#!/usr/init/env python3
+﻿#!/usr/bin/env python3
+"""
+Visuals Module: Enforces category continuity, centralized slug normalization, 
+duration validation, explicit clip cleanup (.close()), and MoviePy background integration.
+"""
+
 import random
 import logging
-import os
 from pathlib import Path
-from moviepy.editor import VideoFileClip, concatenate_videoclips, ColorClip
+from typing import List
+from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 logger = logging.getLogger("visuals")
+
 APPROVED_CATEGORIES = [
     "ASMR Food Preparation",
     "Fast Food / Food Assembly",
@@ -17,56 +23,77 @@ APPROVED_CATEGORIES = [
     "Kinetic Sand & Satisfying Objects"
 ]
 
-class VisualGenerator:
-    def __init__(self, config: dict):
-        self.config = config
-        # Safe environment check for background video API keys if configured
-        self.video_api_key = os.getenv("PEXELS_API_KEY") or os.getenv("VIDEO_API_KEY")
-
-    def select_visual_theme(self) -> str:
-        return random.choice(APPROVED_CATEGORIES)
-
-    def fetch_category_asset(self, theme: str) -> str:
-        slug = theme.lower().replace(" / ", "_").replace(" ", "_")
-        for base in [Path("assets") / "backgrounds" / slug, Path("cache") / slug]:
-            if base.exists():
-                files = [str(p) for p in base.glob("*.*") if p.suffix.lower() in [".mp4", ".mov", ".mkv"]]
-                if files: return random.choice(files)
-        
-        fallback_root = Path("assets") / "backgrounds"
-        if fallback_root.exists():
-            all_files = [str(p) for p in fallback_root.glob("**/*.*") if p.suffix.lower() in [".mp4", ".mov", ".mkv"]]
-            if all_files:
-                return random.choice(all_files)
-        return ""
-
-    def get_hypercut_background(self, target_duration_seconds: float, theme: str = "ASMR Food Preparation"):
-        subclips = []
-        accumulated = 0.0
-        while accumulated < target_duration_seconds:
-            asset_path = self.fetch_category_asset(theme)
-            if not asset_path or not Path(asset_path).exists():
-                return ColorClip(size=(1080, 1920), color=(20, 20, 20)).set_duration(target_duration_seconds)
-                
-            clip = VideoFileClip(asset_path)
-            if clip.duration <= 0: continue
-            segment = round(random.uniform(3.0, 6.0), 2)
-            segment = min(segment, clip.duration)
-            start = random.uniform(0.0, max(0.0, clip.duration - segment))
-            subclips.append(clip.subclip(start, start + segment))
-            accumulated += segment
-            
-        if not subclips: 
-            return ColorClip(size=(1080, 1920), color=(20, 20, 20)).set_duration(target_duration_seconds)
-            
-        final_bg = concatenate_videoclips(subclips, method="compose")
-        if final_bg.duration < target_duration_seconds:
-            loops = int(target_duration_seconds // final_bg.duration) + 1
-            final_bg = concatenate_videoclips([final_bg] * loops, method="compose")
-        return final_bg.subclip(0, target_duration_seconds)
-
-    def generate_progress_bar(self, duration: float):
-        return ColorClip(size=(1080, 15), color=(255, 255, 255)).set_duration(duration)
+def category_slug(theme: str) -> str:
+    return theme.lower().replace(" / ", "_").replace(" ", "_")
 
 def select_visual_theme() -> str:
-    return random.choice(APPROVED_CATEGORIES)
+    theme = random.choice(APPROVED_CATEGORIES)
+    logger.info("Selected visual theme for video: %s", theme)
+    return theme
+
+def fetch_category_asset(theme: str) -> str:
+    slug = category_slug(theme)
+    category_dir = Path("assets") / "backgrounds" / slug
+    
+    if category_dir.exists():
+        media_files = [str(p) for p in category_dir.glob("*.*") if p.suffix.lower() in [".mp4", ".mov", ".mkv"]]
+        if media_files:
+            return random.choice(media_files)
+            
+    cache_dir = Path("cache") / slug
+    if cache_dir.exists():
+        media_files = [str(p) for p in cache_dir.glob("*.*") if p.suffix.lower() in [".mp4", ".mov", ".mkv"]]
+        if media_files:
+            return random.choice(media_files)
+            
+    return ""
+
+def get_segmented_background_clip(theme: str, target_duration_seconds: float):
+    logger.info("Building category-continuous background for theme: %s (Target: %.1fs)", theme, target_duration_seconds)
+    
+    subclips = []
+    parent_clips = []
+    accumulated_duration = 0.0
+    
+    try:
+        while accumulated_duration < target_duration_seconds:
+            segment_duration = round(random.uniform(3.0, 6.0), 2)
+            asset_path = fetch_category_asset(theme)
+            
+            if not asset_path or not Path(asset_path).exists():
+                raise RuntimeError(f"CRITICAL: No valid video assets found for category '{theme}'. Silent procedural gradient fallbacks are strictly prohibited.")
+                
+            clip = VideoFileClip(asset_path)
+            parent_clips.append(clip)
+            
+            if clip.duration <= 0:
+                logger.warning("Asset %s has non-positive duration; skipping.", asset_path)
+                clip.close()
+                continue
+                
+            if clip.duration < segment_duration:
+                segment_duration = clip.duration
+                
+            max_start = max(0.0, clip.duration - segment_duration)
+            start_time = random.uniform(0.0, max_start)
+            subclip = clip.subclip(start_time, start_time + segment_duration)
+            
+            subclips.append(subclip)
+            accumulated_duration += segment_duration
+                
+        if not subclips:
+            raise RuntimeError(f"CRITICAL: Failed to assemble any subclips for category '{theme}'.")
+            
+        final_background = concatenate_videoclips(subclips, method="compose")
+        if final_background.duration < target_duration_seconds:
+            loops_needed = int(target_duration_seconds // final_background.duration) + 1
+            final_background = concatenate_videoclips([final_background] * loops_needed, method="compose")
+            
+        return final_background.subclip(0, target_duration_seconds)
+    finally:
+        # Cleanup parent clips properly after subclips are concatenated
+        for pc in parent_clips:
+            try:
+                pc.close()
+            except Exception:
+                pass
