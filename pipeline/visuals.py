@@ -219,3 +219,15 @@ class VisualGenerator:
         
     def generate_background(self, duration: float, seed=None, **kwargs):
         return make_background_clip(duration, seed)
+
+
+class VisualGenerator:
+    """Compatibility shim for renderer.py to bridge legacy class calls to the new semantic background engine."""
+    def __init__(self, *args, **kwargs):
+        pass
+        
+    def generate_background(self, duration: float, seed=None, **kwargs):
+        return make_background_clip(duration, seed)
+
+    def get_hypercut_background(self, duration: float, seed=None, **kwargs):
+        return make_background_clip(duration, seed)
