@@ -231,3 +231,4 @@ class VisualGenerator:
 
     def get_hypercut_background(self, duration: float, seed=None, **kwargs):
         return make_background_clip(duration, seed)
+
