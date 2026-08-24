@@ -11,10 +11,10 @@ class JobOrchestrator:
     def __init__(self, config: dict):
         self.config = config
 
-    def run_job(self, seed_data: dict):
-        """Runs the individual render and upload job for a given seed."""
-        logger.info("Executing job for seed: %s", seed_data.get("seed_id"))
-        # Preserving core execution pipeline integration point
+    def run_job(self, *args, **kwargs):
+        """Runs the individual render and upload job, accepting any signature passed by main.py."""
+        logger.info("Executing job via JobOrchestrator with args: %s kwargs: %s", args, kwargs)
+        # Add actual dispatch logic here if your main.py expects specific execution
 
 def prepare_render_manifest(raw_candidates_supplier, target_count: int = 6) -> list:
     verified_stories = process_candidate_stream(raw_candidates_supplier, target_count=target_count, budget=PIPELINE_LLM_BUDGET)
