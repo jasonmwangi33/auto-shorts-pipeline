@@ -1,3 +1,6 @@
+﻿MAX_WORDS_PER_PHRASE = 2
+SUBTITLE_ALIGNMENT = 'center'
+STORY_CARD_VERTICAL_POSITION = 'upper'
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -108,3 +111,4 @@ class Renderer:
         if cur_words:
             phrases.append((" ".join(cur_words), cur_start, cur_end))
         return phrases
+
