@@ -1,0 +1,36 @@
+﻿name: Purge YouTube Test Videos
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_delete:
+        description: "Type 'DELETE' to confirm deletion of test videos"
+        required: true
+        default: "NO"
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install google-api-python-client google-auth-oauthlib google-auth-httplib2 requests
+
+      - name: Run video purge script
+        env:
+          YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
+        run: |
+          if [ "${{ github.event.inputs.confirm_delete }}" = "DELETE" ]; then
+            python pipeline/delete_videos.py
+          else
+            echo "Deletion cancelled. You must type 'DELETE' in the confirmation box."
+            exit 1
+          fi
