@@ -17,7 +17,7 @@ VISUAL_REGISTRY = {
     },
     "gaming": {
         "keywords": ["minecraft", "gaming", "parkour", "game", "gameplay", "player"],
-        "queries": ["minecraft parkour", "minecraft gameplay"],
+        "queries": ["minecraft parkour", "gaming background", "parkour gameplay"],
         "local_dir": "assets/backgrounds/gaming",
         "pexels_enabled": False
     },
@@ -231,4 +231,5 @@ class VisualGenerator:
 
     def get_hypercut_background(self, duration: float, seed=None, **kwargs):
         return make_background_clip(duration, seed)
+
 
