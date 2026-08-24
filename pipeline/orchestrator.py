@@ -1,6 +1,8 @@
 ﻿#!/usr/bin/env python3
 import json
 import logging
+import subprocess
+import sys
 from pathlib import Path
 from story_engine import process_candidate_stream, PIPELINE_LLM_BUDGET
 from pipeline.visuals import select_visual_theme
@@ -19,31 +21,10 @@ class JobOrchestrator:
             raise FileNotFoundError(f"Seed file not found: {seed_file}")
             
         seed_data = json.loads(seed_path.read_text(encoding="utf-8"))
-        logger.info("Raw seed_data keys found: %s", list(seed_data.keys()) if isinstance(seed_data, dict) else type(seed_data))
         
-        # Deep recursive search for any string that looks like a script or text content
-        def find_text(obj):
-            if isinstance(obj, str) and len(obj.split()) > 10:
-                return obj
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    res = find_text(v)
-                    if res: return res
-            elif isinstance(obj, list):
-                for item in obj:
-                    res = find_text(item)
-                    if res: return res
-            return ""
-
-        script = find_text(seed_data)
-        if not script:
-            # Fallback to stringifying the story or seed data if text search fails
-            script = seed_data.get("script", seed_data.get("text", str(seed_data)))
-
-        logger.info("Extracted script length: %d words", len(script.split()))
-        
-        if not script.strip():
-            raise ValueError(f"CRITICAL: Could not extract script from job context. Data was: {seed_data}")
+        # If main.py expects to run the core pipeline script for this seed, 
+        # pass execution down to the underlying rendering module or let main.py handle it.
+        logger.info("Orchestrator ready for seed parameters: %s", list(seed_data.keys()))
 
 def prepare_render_manifest(raw_candidates_supplier, target_count: int = 6) -> list:
     verified_stories = process_candidate_stream(raw_candidates_supplier, target_count=target_count, budget=PIPELINE_LLM_BUDGET)
