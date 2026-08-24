@@ -7,14 +7,14 @@ from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 logger = logging.getLogger("visuals")
 
-# Multi-category registry: Minecraft Parkour + Faceless Overhead Food ASMR
+# High-Retention Visual Registry: Juicy Macro Food ASMR + Fast-Paced Minecraft Parkour
 VISUAL_REGISTRY = {
     "gaming": {
         "keywords": ["minecraft", "gaming", "parkour", "game", "gameplay", "player", "level"],
         "queries": [
-            "minecraft parkour gameplay loop vertical",
-            "satisfying minecraft parkour no face",
-            "smooth gaming gameplay background"
+            "minecraft parkour fast motion vertical gameplay",
+            "satisfying minecraft parkour smooth loops",
+            "fast paced gaming gameplay background vertical"
         ],
         "local_dir": "assets/backgrounds/gaming",
         "pexels_enabled": True
@@ -22,9 +22,10 @@ VISUAL_REGISTRY = {
     "food": {
         "keywords": ["cooking", "food", "restaurant", "baking", "recipe", "eat", "taste", "chef", "kitchen", "meal", "daughter", "family", "house", "wife", "husband", "date", "girl", "friend", "work", "job"],
         "queries": [
-            "overhead food preparation macro close up no face",
-            "satisfying cooking slicing chopping top down",
-            "baking cake decorating close up overhead"
+            "juicy steak searing macro close up slow motion",
+            "cheese pulling dripping stretching macro food",
+            "molten chocolate pouring macro baking overhead",
+            "crispy frying food close up sizzling ASMR"
         ],
         "local_dir": "assets/backgrounds/food",
         "pexels_enabled": True
@@ -32,7 +33,7 @@ VISUAL_REGISTRY = {
 }
 
 def semantic_router(story_text: str) -> str:
-    """Routes the story between Minecraft parkour and mesmerizing food ASMR based on keywords."""
+    """Routes the story between fast parkour and juicy food ASMR based on keywords."""
     if not story_text:
         return random.choice(["gaming", "food"])
     
@@ -43,7 +44,6 @@ def semantic_router(story_text: str) -> str:
                 logger.info(f"Semantic match found: '{keyword}' -> {category}")
                 return category
                 
-    # Default to a balanced mix of parkour and food if no specific keyword hits
     return random.choice(["gaming", "food"])
 
 def fetch_pexels_video(query: str) -> str:
@@ -54,7 +54,7 @@ def fetch_pexels_video(query: str) -> str:
         return None
     
     headers = {"Authorization": api_key}
-    url = f"https://api.pexels.com/videos/search?query={query}&per_page=15&orientation=portrait"
+    url = f"https://api.pexels.com/videos/search?query={query}&per_page=20&orientation=portrait"
     
     try:
         resp = requests.get(url, headers=headers, timeout=10)
@@ -121,8 +121,8 @@ def crop_to_9_16(clip):
     return clip.resize(height=1920, width=1080)
 
 def make_background_clip(duration: float, seed) -> VideoFileClip:
-    """Constructs a category-continuous, 9:16, fast-cut background."""
-    logger.info(f"Generating background for duration {duration}s")
+    """Constructs a fast-paced, high-retention 9:16 background clip with 1.5-3s cuts."""
+    logger.info(f"Generating high-retention background for duration {duration}s")
     
     story_text = ""
     if isinstance(seed, dict):
@@ -147,7 +147,6 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
                 asset_path = get_local_asset(category)
                 
             if not asset_path:
-                # Fallback to alternative category if one fails
                 alt_cat = "food" if category == "gaming" else "gaming"
                 query = random.choice(VISUAL_REGISTRY[alt_cat]["queries"])
                 asset_path = fetch_pexels_video(query)
@@ -162,7 +161,8 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
                 
             source_readers.append(clip)
             
-            seg_dur = min(round(random.uniform(3.0, 6.0), 2), clip.duration)
+            # Ultra-fast cuts (1.5 to 3.0 seconds) for high viewer retention
+            seg_dur = min(round(random.uniform(1.5, 3.0), 2), clip.duration)
             if accumulated + seg_dur > duration:
                 seg_dur = duration - accumulated
                 
