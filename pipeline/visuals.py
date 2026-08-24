@@ -7,14 +7,14 @@ from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 logger = logging.getLogger("visuals")
 
-# High-Retention Visual Registry: Juicy Macro Food ASMR + Fast-Paced Minecraft Parkour
+# Strict Visual Registry: Pure Minecraft Parkour + Juicy Macro Food ASMR
 VISUAL_REGISTRY = {
     "gaming": {
         "keywords": ["minecraft", "gaming", "parkour", "game", "gameplay", "player", "level"],
         "queries": [
-            "minecraft parkour fast motion vertical gameplay",
-            "satisfying minecraft parkour smooth loops",
-            "fast paced gaming gameplay background vertical"
+            "minecraft parkour gameplay loop vertical no people",
+            "minecraft parkour smooth gameplay background",
+            "minecraft obstacle course gameplay vertical"
         ],
         "local_dir": "assets/backgrounds/gaming",
         "pexels_enabled": True
@@ -33,7 +33,7 @@ VISUAL_REGISTRY = {
 }
 
 def semantic_router(story_text: str) -> str:
-    """Routes the story between fast parkour and juicy food ASMR based on keywords."""
+    """Routes the story between Minecraft parkour and juicy food ASMR based on keywords."""
     if not story_text:
         return random.choice(["gaming", "food"])
     
@@ -161,7 +161,6 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
                 
             source_readers.append(clip)
             
-            # Ultra-fast cuts (1.5 to 3.0 seconds) for high viewer retention
             seg_dur = min(round(random.uniform(1.5, 3.0), 2), clip.duration)
             if accumulated + seg_dur > duration:
                 seg_dur = duration - accumulated
