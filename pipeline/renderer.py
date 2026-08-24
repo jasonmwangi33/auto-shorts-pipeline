@@ -10,6 +10,17 @@ class Renderer:
         self.config = config or {}
         self.visual_gen = VisualGenerator()
 
+    def render(self, plan, narration_path, output_dir, job_id, headline=None, subreddit=None, visual_theme=None, **kwargs):
+        """Compatibility wrapper for orchestrator.py expecting .render(...)"""
+        output_path = os.path.join(output_dir, f"{job_id}.mp4")
+        seed = {
+            "id": job_id,
+            "script": plan if isinstance(plan, str) else str(plan),
+            "audio_path": narration_path,
+            "theme": visual_theme
+        }
+        return self.render_short(seed, output_path)
+
     def render_short(self, seed: dict, output_path: str):
         """Renders the short with fast-paced 2x background, clear audio, and centered bold kinetic captions (1-2 words)."""
         logger.info(f"Starting render for seed: {seed.get('id', 'unknown')}")
@@ -35,8 +46,6 @@ class Renderer:
         
         words = script_text.split()
         if words:
-            word_duration = duration / len(words)
-            # Group words into chunks of 1 to 2 words for rapid reference-style flashing
             chunk_size = 2
             word_chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
             chunk_duration = duration / len(word_chunks)
