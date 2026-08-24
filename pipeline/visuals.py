@@ -1,136 +1,40 @@
-import os
+﻿#!/usr/bin/env python3
 import random
-import requests
-import numpy as np
+import logging
 from pathlib import Path
-from moviepy.editor import VideoFileClip, VideoClip, concatenate_videoclips
-from typing import Tuple, Dict, Any, List
+from moviepy.editor import VideoFileClip, concatenate_videoclips
 
-class BackgroundProvider:
-    def get_clips(self, theme: str, count: int) -> List[str]:
-        raise NotImplementedError
+logger = logging.getLogger("visuals")
+APPROVED_CATEGORIES = ["ASMR Food Preparation", "Fast Food / Food Assembly", "Smoothie & Drink Preparation", "Cake & Dessert Decoration", "Satisfying Food / Ice Cutting", "Minecraft Parkour / Gameplay", "Satisfying Industrial Machinery", "Kinetic Sand & Satisfying Objects"]
 
-class PexelsBackgroundProvider(BackgroundProvider):
-    def __init__(self):
-        self.api_key = os.environ.get("PEXELS_API_KEY", "")
-        self.cache_dir = Path("data/bg_cache")
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+def select_visual_theme() -> str:
+    return random.choice(APPROVED_CATEGORIES)
 
-    def get_clips(self, theme: str, count: int) -> List[str]:
-        if not self.api_key:
-            print("[-] PEXELS_API_KEY not found. Skipping Pexels provider.")
-            return []
-            
-        print(f"[*] Fetching '{theme}' footage from Pexels API...")
-        headers = {"Authorization": self.api_key}
-        url = f"https://api.pexels.com/videos/search?query={theme}&orientation=portrait&size=medium&per_page=15"
-        
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-            downloaded = []
-            for video in data.get("videos", [])[:count]:
-                files = video.get("video_files", [])
-                if not files: continue
-                
-                # Grab a solid mp4 link
-                link = next((f["link"] for f in files if f["file_type"] == "video/mp4"), files[0]["link"])
-                video_id = video["id"]
-                out_path = self.cache_dir / f"pexels_{video_id}.mp4"
-                
-                if not out_path.exists():
-                    vid_resp = requests.get(link, stream=True, timeout=15)
-                    with open(out_path, 'wb') as f:
-                        for chunk in vid_resp.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                downloaded.append(str(out_path))
-            return downloaded
-        except Exception as e:
-            print(f"[-] Pexels API failure: {e}")
-            return []
+def fetch_category_asset(theme: str) -> str:
+    slug = theme.lower().replace(" / ", "_").replace(" ", "_")
+    for base in [Path("assets") / "backgrounds" / slug, Path("cache") / slug]:
+        if base.exists():
+            files = [str(p) for p in base.glob("*.*") if p.suffix.lower() in [".mp4", ".mov", ".mkv"]]
+            if files: return random.choice(files)
+    return ""
 
-class PreloadedBackgroundProvider(BackgroundProvider):
-    def __init__(self):
-        self.local_dir = Path("assets/backgrounds")
-
-    def get_clips(self, theme: str, count: int) -> List[str]:
-        if not self.local_dir.exists():
-            return []
-        files = []
-        for ext in ("*.mp4", "*.mov"):
-            files.extend([str(p) for p in self.local_dir.glob(ext)])
-        random.shuffle(files)
-        return files[:count]
-
-class VisualGenerator:
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self.providers = [PexelsBackgroundProvider(), PreloadedBackgroundProvider()]
-
-    def get_hypercut_background(self, duration: float, theme: str, size: Tuple[int, int] = (1080, 1920)) -> VideoClip:
-        target_w, target_h = size
-        raw_clips = []
-        
-        # Try providers in order
-        for provider in self.providers:
-            raw_clips = provider.get_clips(theme, count=10)
-            if len(raw_clips) > 0:
-                break
-                
-        if not raw_clips:
-            # Loud failure instead of silent gradient fallback
-            raise RuntimeError(f"CRITICAL FAILURE: No background footage could be sourced for theme '{theme}'. Render aborted.")
-
-        assembled_clips = []
-        current_dur = 0.0
-        last_clip = None
-
-        print(f"[*] Assembling hyper-cut background ({duration}s target)")
-        
-        # Hyper-cut assembly loop (2 to 4 second cuts)
-        while current_dur < duration:
-            available = [c for c in raw_clips if c != last_clip]
-            if not available:
-                available = raw_clips # Fallback if only 1 clip exists
-                
-            chosen_file = random.choice(available)
-            last_clip = chosen_file
-            
-            try:
-                clip = VideoFileClip(chosen_file, audio=False)
-                cut_length = random.uniform(2.0, 4.0)
-                
-                # Ensure we don't request more time than the clip has
-                if clip.duration <= cut_length:
-                    segment = clip
-                else:
-                    start_t = random.uniform(0, clip.duration - cut_length)
-                    segment = clip.subclip(start_t, start_t + cut_length)
-                
-                # Apply vertical math
-                orig_w, orig_h = segment.size
-                scale_factor = max(target_w / orig_w, target_h / orig_h)
-                segment = segment.resize(scale_factor)
-                segment = segment.crop(x_center=segment.w / 2, y_center=segment.h / 2, width=target_w, height=target_h)
-                
-                assembled_clips.append(segment)
-                current_dur += segment.duration
-            except Exception as e:
-                print(f"[-] Dropping corrupted clip {chosen_file}: {e}")
-                raw_clips.remove(chosen_file)
-                if not raw_clips:
-                     raise RuntimeError("CRITICAL FAILURE: All sourced clips were corrupted.")
-        
-        final_bg = concatenate_videoclips(assembled_clips, method="compose")
-        return final_bg.set_duration(duration)
-
-    def generate_progress_bar(self, duration: float, size: Tuple[int, int] = (1080, 1920)) -> VideoClip:
-        w, h = size
-        def make_frame(t):
-            frame = np.zeros((16, w, 3), dtype=np.uint8)
-            progress = int(w * min(t / duration, 1.0))
-            frame[:, :progress, :] = (255, 215, 0)
-            return frame
-        return VideoClip(make_frame, duration=duration).set_position(("center", "bottom"))
+def get_segmented_background_clip(theme: str, target_duration_seconds: float):
+    subclips = []
+    accumulated = 0.0
+    while accumulated < target_duration_seconds:
+        asset_path = fetch_category_asset(theme)
+        if not asset_path or not Path(asset_path).exists():
+            raise RuntimeError(f"CRITICAL: No assets for '{theme}'. Procedural fallbacks prohibited.")
+        clip = VideoFileClip(asset_path)
+        if clip.duration <= 0: continue
+        segment = round(random.uniform(3.0, 6.0), 2)
+        segment = min(segment, clip.duration)
+        start = random.uniform(0.0, max(0.0, clip.duration - segment))
+        subclips.append(clip.subclip(start, start + segment))
+        accumulated += segment
+    if not subclips: raise RuntimeError(f"CRITICAL: Assembly failed for category '{theme}'.")
+    final_bg = concatenate_videoclips(subclips, method="compose")
+    if final_bg.duration < target_duration_seconds:
+        loops = int(target_duration_seconds // final_bg.duration) + 1
+        final_bg = concatenate_videoclips([final_bg] * loops, method="compose")
+    return final_bg.subclip(0, target_duration_seconds)
