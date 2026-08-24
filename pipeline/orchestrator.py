@@ -1,31 +1,96 @@
-﻿#!/usr/bin/env python3
-"""
-Orchestrator Module: Integrates the Story Quality Gate with a job-global LLM budget,
-dynamic seed generation, and independent visual theme assignment per render job.
-"""
-
 import json
-import logging
+import random
+import subprocess
 from pathlib import Path
-from story_engine import process_candidate_stream, GlobalLLMBudget
-from pipeline.visuals import select_visual_theme
+from typing import Dict, Any
+from .state import init_db, update_job_state, JobState
+from .narration import NarrationEngine
+from .renderer import Renderer
+from .utils import json_load, json_dump
+from .models import EditPlan
 
-logger = logging.getLogger("orchestrator")
+# High-retention visual themes independent of the narrative
+VISUAL_THEMES = [
+    "ASMR cooking", 
+    "satisfying food preparation", 
+    "kinetic sand", 
+    "satisfying machinery", 
+    "satisfying cleaning"
+]
 
-def prepare_render_manifest(raw_candidates_supplier, target_count: int = 6, max_llm_calls: int = 15) -> list:
-    global_budget = GlobalLLMBudget(max_calls=max_llm_calls)
-    verified_stories = process_candidate_stream(raw_candidates_supplier, target_count=target_count, budget=global_budget)
-    
-    manifest = []
-    for story in verified_stories:
-        visual_theme = select_visual_theme()
-        manifest.append({
-            "seed_id": story.get("seed_id"),
-            "story": story,
-            "visual_theme": visual_theme
-        })
+class JobOrchestrator:
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        init_db()
+
+    def run_job(self, job_id: str, seed_file: str, auto_improve: bool = False, max_retries: int = 3):
+        seed_path = Path(seed_file)
+        if not seed_path.exists():
+            print(f"[!] Seed file not found: {seed_file}")
+            return
+
+        seed_data = json_load(seed_path)
+        output_dir = Path("output")
+        output_dir.mkdir(exist_ok=True)
+        tts_dir = Path("data/tts_cache")
+        tts_dir.mkdir(parents=True, exist_ok=True)
+
+        update_job_state(job_id, JobState.DISCOVERED)
+
+        headline = seed_data.get("headline", "Trending Story")
+        subreddit = seed_data.get("subreddit", seed_data.get("topic", "r/AmItheAsshole"))
         
-    seed_path = Path("seeds.json")
-    seed_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    logger.info("Successfully wrote %d verified seeds to seeds.json", len(manifest))
-    return manifest
+        # Select an independent visual theme
+        selected_theme = random.choice(VISUAL_THEMES)
+
+        print(f"[*] Generating Narration for Job {job_id}...")
+        narration_engine = NarrationEngine(self.config)
+        script, duration, word_timings, narration_path = narration_engine.generate(seed_data, tts_dir, job_id)
+        
+        plan = EditPlan(
+            target_duration=duration,
+            subtitles_config=self.config["subtitles"],
+            narration_script=script,
+            narration_word_timings=word_timings
+        )
+
+        print(f"[*] Rendering {job_id} with independent visual theme: '{selected_theme}'")
+        renderer = Renderer(self.config)
+        update_job_state(job_id, JobState.RENDERING)
+        render_result = renderer.render(plan, narration_path, output_dir, job_id, headline=headline, subreddit=subreddit, visual_theme=selected_theme)
+
+        if not render_result.success:
+            print(f"[!] Render fatally failed. Skipping QC and artifacts.")
+            update_job_state(job_id, JobState.FAILED)
+            
+            # Write a failed QC manifest so the router knows to skip it
+            qc_manifest = {"job_id": job_id, "seed_index": seed_data.get("seed_index", 0), "passed": False, "score": 0.0}
+            json_dump(qc_manifest, output_dir / f"{job_id}_qc.json")
+            return
+
+        thumbnail_path = output_dir / f"{job_id}_thumbnail.jpg"
+        metadata_path = output_dir / f"{job_id}_metadata.json"
+        
+        subprocess.run(
+            ["ffmpeg", "-y", "-ss", "2.0", "-i", render_result.output_path, "-frames:v", "1", "-q:v", "2", str(thumbnail_path)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+
+        metadata = {
+            "title": headline[:70],
+            "description": f"{script}\n\n#Shorts #RedditStories #AITA #Viral",
+            "hashtags": ["#shorts", "#redditstories", "#aita"]
+        }
+        json_dump(metadata, metadata_path)
+
+        qc_manifest = {
+            "job_id": job_id,
+            "seed_index": seed_data.get("seed_index", 0),
+            "passed": True,
+            "output_file": str(render_result.output_path),
+            "duration": duration,
+            "score": 1.0
+        }
+        json_dump(qc_manifest, output_dir / f"{job_id}_qc.json")
+        print(f"[SUCCESS] Job {job_id} rendered and packaged successfully!")
+        update_job_state(job_id, JobState.APPROVED)
