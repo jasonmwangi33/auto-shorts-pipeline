@@ -205,3 +205,8 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
             try: sc.close()
             except: pass
         raise
+
+
+def select_visual_theme() -> str:
+    return 'gaming'
+
