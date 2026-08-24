@@ -5,18 +5,24 @@ from pipeline.visuals import VisualGenerator
 
 logger = logging.getLogger("renderer")
 
+class RenderResult:
+    """Result object to satisfy orchestrator.py expecting .success attribute."""
+    def __init__(self, success: bool, video_path: str):
+        self.success = success
+        self.video_path = video_path
+
 class Renderer:
     def __init__(self, config=None):
         self.config = config or {}
         self.visual_gen = VisualGenerator()
 
     def render(self, plan, narration_path, output_dir, job_id, headline=None, subreddit=None, visual_theme=None, **kwargs):
-        """Compatibility wrapper for orchestrator.py expecting .render(...)"""
+        """Compatibility wrapper for orchestrator.py returning a RenderResult object."""
         output_path = os.path.join(output_dir, f"{job_id}.mp4")
         seed = {
             "id": job_id,
             "script": plan if isinstance(plan, str) else str(plan),
-            "audio_path": narration_path,
+            "audio_path": str(narration_path) if narration_path else None,
             "theme": visual_theme
         }
         return self.render_short(seed, output_path)
@@ -93,5 +99,4 @@ class Renderer:
                 except: pass
                 
         logger.info(f"Successfully rendered video to {output_path}")
-        return output_path
-
+        return RenderResult(success=True, video_path=output_path)
