@@ -7,38 +7,34 @@ from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 logger = logging.getLogger("visuals")
 
-# Strict visual vocabulary registry with Pexels enabled universally
+# Multi-category registry: Minecraft Parkour + Faceless Overhead Food ASMR
 VISUAL_REGISTRY = {
-    "food": {
-        "keywords": ["cooking", "food", "restaurant", "baking", "recipe", "eat", "taste", "chef", "kitchen", "meal"],
-        "queries": ["satisfying food preparation", "street food assembly", "cake decorating", "cooking close up"],
-        "local_dir": "assets/backgrounds/food",
-        "pexels_enabled": True
-    },
     "gaming": {
-        "keywords": ["minecraft", "gaming", "parkour", "game", "gameplay", "player"],
-        "queries": ["gaming gameplay", "parkour gameplay", "action video"],
+        "keywords": ["minecraft", "gaming", "parkour", "game", "gameplay", "player", "level"],
+        "queries": [
+            "minecraft parkour gameplay loop vertical",
+            "satisfying minecraft parkour no face",
+            "smooth gaming gameplay background"
+        ],
         "local_dir": "assets/backgrounds/gaming",
         "pexels_enabled": True
     },
-    "asmr": {
-        "keywords": ["satisfying", "cutting", "sand", "machinery", "factory", "process", "smooth", "cleaning"],
-        "queries": ["kinetic sand", "satisfying machinery", "hydraulic press", "satisfying cleaning"],
-        "local_dir": "assets/backgrounds/asmr",
-        "pexels_enabled": True
-    },
-    "lifestyle": {
-        "keywords": ["city", "walking", "psychology", "life", "human", "behavior", "urban", "street"],
-        "queries": ["city walking", "urban lifestyle", "people walking city"],
-        "local_dir": "assets/backgrounds/lifestyle",
+    "food": {
+        "keywords": ["cooking", "food", "restaurant", "baking", "recipe", "eat", "taste", "chef", "kitchen", "meal", "daughter", "family", "house", "wife", "husband", "date", "girl", "friend", "work", "job"],
+        "queries": [
+            "overhead food preparation macro close up no face",
+            "satisfying cooking slicing chopping top down",
+            "baking cake decorating close up overhead"
+        ],
+        "local_dir": "assets/backgrounds/food",
         "pexels_enabled": True
     }
 }
 
 def semantic_router(story_text: str) -> str:
-    """Routes the story to an approved category based on keyword density."""
+    """Routes the story between Minecraft parkour and mesmerizing food ASMR based on keywords."""
     if not story_text:
-        return "gaming"
+        return random.choice(["gaming", "food"])
     
     text_lower = story_text.lower()
     for category, data in VISUAL_REGISTRY.items():
@@ -47,8 +43,8 @@ def semantic_router(story_text: str) -> str:
                 logger.info(f"Semantic match found: '{keyword}' -> {category}")
                 return category
                 
-    logger.info("No semantic match found. Defaulting to gaming.")
-    return "gaming"
+    # Default to a balanced mix of parkour and food if no specific keyword hits
+    return random.choice(["gaming", "food"])
 
 def fetch_pexels_video(query: str) -> str:
     """Fetches high-quality vertical footage via Pexels API."""
@@ -125,12 +121,8 @@ def crop_to_9_16(clip):
     return clip.resize(height=1920, width=1080)
 
 def make_background_clip(duration: float, seed) -> VideoFileClip:
-    """
-    Constructs a category-continuous, 9:16, fast-cut background.
-    Returns the MoviePy composite object. Retains reader references internally 
-    for lazy evaluation in the final render.
-    """
-    logger.info(f"Generating semantic background for duration {duration}s")
+    """Constructs a category-continuous, 9:16, fast-cut background."""
+    logger.info(f"Generating background for duration {duration}s")
     
     story_text = ""
     if isinstance(seed, dict):
@@ -148,16 +140,20 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
     try:
         while accumulated < duration:
             asset_path = None
-            
-            if registry["pexels_enabled"]:
-                query = random.choice(registry["queries"])
-                asset_path = fetch_pexels_video(query)
+            query = random.choice(registry["queries"])
+            asset_path = fetch_pexels_video(query)
             
             if not asset_path:
                 asset_path = get_local_asset(category)
                 
             if not asset_path:
-                raise RuntimeError(f"CRITICAL: No assets available for assigned category '{category}'. Semantic continuity enforced; failing job.")
+                # Fallback to alternative category if one fails
+                alt_cat = "food" if category == "gaming" else "gaming"
+                query = random.choice(VISUAL_REGISTRY[alt_cat]["queries"])
+                asset_path = fetch_pexels_video(query)
+                
+            if not asset_path:
+                raise RuntimeError(f"CRITICAL: No assets available for category '{category}'.")
                 
             clip = VideoFileClip(asset_path)
             if clip.duration <= 0:
@@ -181,7 +177,6 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
             
         final_bg = concatenate_videoclips(subclips, method="compose")
         final_bg.source_readers = source_readers 
-        
         return final_bg.subclip(0, duration)
         
     except Exception as e:
@@ -195,22 +190,7 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
         raise
 
 class VisualGenerator:
-    """Compatibility shim for renderer.py to bridge legacy class calls to the new semantic background engine."""
-    def __init__(self, *args, **kwargs):
-        pass
-        
-    def generate_background(self, duration: float, seed=None, **kwargs):
-        return make_background_clip(duration, seed)
-
-    def get_hypercut_background(self, duration: float, seed=None, **kwargs):
-        return make_background_clip(duration, seed)
-
-def select_visual_theme() -> str:
-    return "gaming"
-
-
-class VisualGenerator:
-    """Compatibility shim for renderer.py to bridge legacy class calls to the new semantic background engine."""
+    """Compatibility shim for renderer.py."""
     def __init__(self, *args, **kwargs):
         pass
         
@@ -225,3 +205,6 @@ class VisualGenerator:
         w, h = video_size
         bar_height = 15
         return ColorClip(size=(w, bar_height), color=(255, 215, 0)).set_duration(duration).set_position(("center", "bottom"))
+
+def select_visual_theme() -> str:
+    return "gaming"
