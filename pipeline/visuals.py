@@ -7,7 +7,7 @@ from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 logger = logging.getLogger("visuals")
 
-# Strict visual vocabulary registry
+# Strict visual vocabulary registry with Pexels enabled universally
 VISUAL_REGISTRY = {
     "food": {
         "keywords": ["cooking", "food", "restaurant", "baking", "recipe", "eat", "taste", "chef", "kitchen", "meal"],
@@ -17,13 +17,13 @@ VISUAL_REGISTRY = {
     },
     "gaming": {
         "keywords": ["minecraft", "gaming", "parkour", "game", "gameplay", "player"],
-        "queries": ["minecraft parkour", "gaming background", "parkour gameplay"],
+        "queries": ["gaming gameplay", "parkour gameplay", "action video"],
         "local_dir": "assets/backgrounds/gaming",
-        "pexels_enabled": False
+        "pexels_enabled": True
     },
     "asmr": {
-        "keywords": ["satisfying", "cutting", "sand", "machinery", "factory", "process", "smooth"],
-        "queries": ["kinetic sand", "satisfying machinery", "hydraulic press"],
+        "keywords": ["satisfying", "cutting", "sand", "machinery", "factory", "process", "smooth", "cleaning"],
+        "queries": ["kinetic sand", "satisfying machinery", "hydraulic press", "satisfying cleaning"],
         "local_dir": "assets/backgrounds/asmr",
         "pexels_enabled": True
     },
@@ -73,7 +73,6 @@ def fetch_pexels_video(query: str) -> str:
         if not files:
             return None
             
-        # Select best available resolution
         best_file = max(files, key=lambda f: f.get("width", 0) * f.get("height", 0))
         download_link = best_file.get("link")
         
@@ -84,7 +83,6 @@ def fetch_pexels_video(query: str) -> str:
         cache_dir.mkdir(parents=True, exist_ok=True)
         asset_path = cache_dir / f"pexels_{video['id']}.mp4"
         
-        # Download if not cached
         if not asset_path.exists():
             logger.info(f"Downloading Pexels asset to {asset_path}")
             vid_resp = requests.get(download_link, stream=True, timeout=30)
@@ -116,12 +114,10 @@ def crop_to_9_16(clip):
     current_aspect = w / h
     
     if current_aspect > target_aspect:
-        # Video is wider than 9:16; crop sides
         target_w = int(h * target_aspect)
         x_center = w / 2
         clip = clip.crop(x1=x_center - target_w/2, y1=0, x2=x_center + target_w/2, y2=h)
     else:
-        # Video is taller than 9:16; crop top/bottom
         target_h = int(w / target_aspect)
         y_center = h / 2
         clip = clip.crop(x1=0, y1=y_center - target_h/2, x2=w, y2=y_center + target_h/2)
@@ -146,7 +142,7 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
     registry = VISUAL_REGISTRY[category]
     
     subclips = []
-    source_readers = [] # Retain references so MoviePy readers stay alive during render
+    source_readers = []
     accumulated = 0.0
     
     try:
@@ -157,11 +153,9 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
                 query = random.choice(registry["queries"])
                 asset_path = fetch_pexels_video(query)
             
-            # Semantic Local Fallback
             if not asset_path:
                 asset_path = get_local_asset(category)
                 
-            # Strict Hard Failure Rule (No generic gradients)
             if not asset_path:
                 raise RuntimeError(f"CRITICAL: No assets available for assigned category '{category}'. Semantic continuity enforced; failing job.")
                 
@@ -170,10 +164,8 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
                 clip.close()
                 continue
                 
-            # Bind the reader
             source_readers.append(clip)
             
-            # 3 to 6-second fast cuts
             seg_dur = min(round(random.uniform(3.0, 6.0), 2), clip.duration)
             if accumulated + seg_dur > duration:
                 seg_dur = duration - accumulated
@@ -188,15 +180,11 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
             accumulated += seg_dur
             
         final_bg = concatenate_videoclips(subclips, method="compose")
-        
-        # Attach the readers to the composite clip so they are not garbage collected
-        # until the renderer finishes and destroys the composite clip.
         final_bg.source_readers = source_readers 
         
         return final_bg.subclip(0, duration)
         
     except Exception as e:
-        # Explicit cleanup if assembly crashes halfway
         logger.error(f"Failed during background composition: {e}")
         for reader in source_readers:
             try: reader.close()
@@ -205,21 +193,6 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
             try: sc.close()
             except: pass
         raise
-
-
-def select_visual_theme() -> str:
-    return 'gaming'
-
-
-
-class VisualGenerator:
-    """Compatibility shim for renderer.py to bridge legacy class calls to the new semantic background engine."""
-    def __init__(self, *args, **kwargs):
-        pass
-        
-    def generate_background(self, duration: float, seed=None, **kwargs):
-        return make_background_clip(duration, seed)
-
 
 class VisualGenerator:
     """Compatibility shim for renderer.py to bridge legacy class calls to the new semantic background engine."""
@@ -232,4 +205,5 @@ class VisualGenerator:
     def get_hypercut_background(self, duration: float, seed=None, **kwargs):
         return make_background_clip(duration, seed)
 
-
+def select_visual_theme() -> str:
+    return "gaming"
