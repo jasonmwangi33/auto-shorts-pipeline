@@ -207,3 +207,21 @@ class VisualGenerator:
 
 def select_visual_theme() -> str:
     return "gaming"
+
+
+class VisualGenerator:
+    """Compatibility shim for renderer.py to bridge legacy class calls to the new semantic background engine."""
+    def __init__(self, *args, **kwargs):
+        pass
+        
+    def generate_background(self, duration: float, seed=None, **kwargs):
+        return make_background_clip(duration, seed)
+
+    def get_hypercut_background(self, duration: float, seed=None, **kwargs):
+        return make_background_clip(duration, seed)
+
+    def generate_progress_bar(self, duration: float, video_size=(1080, 1920), **kwargs):
+        from moviepy.editor import ColorClip
+        w, h = video_size
+        bar_height = 15
+        return ColorClip(size=(w, bar_height), color=(255, 215, 0)).set_duration(duration).set_position(("center", "bottom"))
