@@ -1,3 +1,9 @@
+﻿
+import os
+try:
+    os.environ['IMAGEMAGICK_BINARY'] = '/usr/bin/convert'
+except:
+    pass
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -108,3 +114,4 @@ class Renderer:
         if cur_words:
             phrases.append((" ".join(cur_words), cur_start, cur_end))
         return phrases
+
