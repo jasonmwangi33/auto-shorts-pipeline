@@ -25,7 +25,7 @@ class Renderer:
         """Renders the short with fast-paced 2x background, clear audio, and centered bold kinetic captions (1-2 words)."""
         logger.info(f"Starting render for seed: {seed.get('id', 'unknown')}")
         
-        audio_path = seed.get("audio_path")
+        audio_path = str(seed.get("audio_path")) if seed.get("audio_path") else None
         script_text = seed.get("script", seed.get("story", "This is a story."))
         
         if not audio_path or not os.path.exists(audio_path):
@@ -94,3 +94,4 @@ class Renderer:
                 
         logger.info(f"Successfully rendered video to {output_path}")
         return output_path
+
