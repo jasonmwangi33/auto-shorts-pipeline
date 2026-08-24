@@ -6,11 +6,12 @@ from pipeline.visuals import VisualGenerator
 logger = logging.getLogger("renderer")
 
 class RenderResult:
-    """Result object to satisfy orchestrator.py expecting .success and .output_path attributes."""
+    """Result object with absolute paths to satisfy orchestrator.py validation."""
     def __init__(self, success: bool, video_path: str):
+        abs_path = os.path.abspath(video_path)
         self.success = success
-        self.video_path = video_path
-        self.output_path = video_path  # Satisfy orchestrator.py expectation
+        self.video_path = abs_path
+        self.output_path = abs_path
 
 class Renderer:
     def __init__(self, config=None):
@@ -18,8 +19,9 @@ class Renderer:
         self.visual_gen = VisualGenerator()
 
     def render(self, plan, narration_path, output_dir, job_id, headline=None, subreddit=None, visual_theme=None, **kwargs):
-        """Compatibility wrapper for orchestrator.py returning a RenderResult object."""
-        output_path = os.path.join(output_dir, f"{job_id}.mp4")
+        """Compatibility wrapper for orchestrator.py returning absolute paths."""
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.abspath(os.path.join(output_dir, f"{job_id}.mp4"))
         seed = {
             "id": job_id,
             "script": plan if isinstance(plan, str) else str(plan),
@@ -29,9 +31,10 @@ class Renderer:
         return self.render_short(seed, output_path)
 
     def render_short(self, seed: dict, output_path: str):
-        """Renders the short with fast-paced 2x background, clear audio, and centered bold kinetic captions (1-2 words)."""
+        """Renders the short with fast-paced 2x background, absolute path verification, and kinetic captions."""
         logger.info(f"Starting render for seed: {seed.get('id', 'unknown')}")
         
+        output_path = os.path.abspath(output_path)
         audio_path = str(seed.get("audio_path")) if seed.get("audio_path") else None
         script_text = seed.get("script", seed.get("story", "This is a story."))
         
@@ -98,6 +101,13 @@ class Renderer:
             for reader in bg_clip.source_readers:
                 try: reader.close()
                 except: pass
-                
-        logger.info(f"Successfully rendered video to {output_path}")
+
+        # Force file system sync and verify file is non-empty before returning
+        if hasattr(os, 'sync'):
+            os.sync()
+            
+        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            raise RuntimeError(f"Render validation failed: Output video at {output_path} is missing or empty.")
+            
+        logger.info(f"[SUCCESS] Job {seed.get('id')} rendered, verified, and packaged successfully at {output_path}")
         return RenderResult(success=True, video_path=output_path)
