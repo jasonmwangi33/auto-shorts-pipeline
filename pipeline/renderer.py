@@ -6,10 +6,11 @@ from pipeline.visuals import VisualGenerator
 logger = logging.getLogger("renderer")
 
 class RenderResult:
-    """Result object to satisfy orchestrator.py expecting .success attribute."""
+    """Result object to satisfy orchestrator.py expecting .success and .output_path attributes."""
     def __init__(self, success: bool, video_path: str):
         self.success = success
         self.video_path = video_path
+        self.output_path = video_path  # Satisfy orchestrator.py expectation
 
 class Renderer:
     def __init__(self, config=None):
