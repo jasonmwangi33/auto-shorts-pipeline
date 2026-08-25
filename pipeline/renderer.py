@@ -20,33 +20,46 @@ class Renderer:
 
     def _extract_story_text(self, plan) -> str:
         """
-        Intelligently extracts story text while only blocking actual raw code/config objects,
-        preventing false-positive fallbacks.
+        Safely extracts story text from EditPlan objects, dictionaries, or strings,
+        preventing Python object __repr__ (like EditPlan(...)) from leaking into subtitles.
         """
+        fallback_stories = [
+            "My car was totaled, and now the kid who hit me is demanding I pay for his damages.",
+            "I never expected my own family to turn against me over a stupid inheritance dispute.",
+            "My boss thought he could fire me quietly until I uploaded the security footage online."
+        ]
+        
         if plan is None:
-            return "When I was nineteen, my entire life changed in a single terrifying second."
+            return fallback_stories[0]
 
+        # 1. If plan is a custom object (like an EditPlan instance) with attributes
+        for attr in ["script", "story", "text", "narrative", "content"]:
+            if hasattr(plan, attr):
+                val = getattr(plan, attr)
+                if val and isinstance(val, str) and "EDITPLAN" not in val.upper():
+                    return val
+
+        # 2. If plan is a dictionary
         if isinstance(plan, dict):
             for key in ["script", "story", "text", "narrative", "content"]:
                 if key in plan and plan[key]:
                     val = str(plan[key])
-                    # Only reject if it's genuinely a raw config dump
-                    if "EDITPLAN(" not in val and "SUBTITLES_CONFIG" not in val:
+                    if "EDITPLAN" not in val.upper() and "EDITPLAN" not in key.upper():
                         return val
 
+        # 3. Handle string representation and check for EditPlan object leaks
         text = str(plan)
         
-        # Only block if it's an actual raw python config dictionary representation
-        if text.strip().startswith("{") and ("'fontsize'" in text or "'stroke_color'" in text):
-            logger.error("Blocked raw config dictionary render attempt.")
-            return "When I was nineteen, my entire life changed in a single terrifying second."
+        if "EDITPLAN" in text.upper() or "SUBTITLES" in text.upper() or text.strip().startswith("EditPlan"):
+            logger.error(f"BLOCKED EDITPLAN OBJECT LEAK: Renderer intercepted -> {text[:120]}")
+            return fallback_stories[hash(text) % len(fallback_stories)]
                 
         # Clean text for subtitle rendering
         cleaned = re.sub(r'[^a-zA-Z0-9\s.,?!\-\'$]', '', text)
         cleaned = " ".join(cleaned.split())
         
-        if len(cleaned) < 10:
-            return "When I was nineteen, my entire life changed in a single terrifying second."
+        if len(cleaned) < 10 or "EDITPLAN" in cleaned.upper():
+            return fallback_stories[0]
             
         return cleaned
 
@@ -84,7 +97,6 @@ class Renderer:
         
         words = script_text.split()
         if words:
-            # Chunk into 2 words for rapid, high-retention pacing
             chunk_size = 2
             word_chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
             chunk_duration = duration / max(len(word_chunks), 1)
@@ -97,11 +109,11 @@ class Renderer:
                 try:
                     txt_clip = TextClip(
                         chunk.upper(),
-                        fontsize=110,         # Massive size matching top TikTok channels
+                        fontsize=110,
                         color='white',
                         stroke_color='black',
-                        stroke_width=8,       # Extra-thick outline for maximum contrast
-                        font='Impact',        # Ultra-bold native font matching viral video aesthetics
+                        stroke_width=8,
+                        font='Impact',
                         size=(1000, None),
                         method='caption'
                     ).set_start(current_time).set_duration(min(chunk_duration, duration - current_time)).set_position(('center', 'center'))
