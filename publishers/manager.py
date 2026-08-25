@@ -34,35 +34,12 @@ def publish_qc_video(video_path, job_id, qc_passed, title, youtube_description, 
             update_target_state(video_hash, target_key, "SUCCESS", platform_id=video_id, details={"channel_id": channel_id})
             report["targets"][target_key] = f"SUCCESS (ID: {video_id})"
         except Exception as e:
-            print(f"[Error] {target_key} failed: {e}")
+            print(f"[Hard-Fail Error] {target_key} failed: {e}")
             update_target_state(video_hash, target_key, "FAILED", details={"error": str(e)})
-            report["targets"][target_key] = f"FAILED ({e})"
-
-    ig_target_key = "instagram"
-    if not video_public_url:
-        print("[Instagram] Skipped: No public video URL provided.")
-        report["targets"][ig_target_key] = "SKIPPED_NO_PUBLIC_URL"
-    else:
-        ig_status = get_target_status(video_hash, ig_target_key)
-        if ig_status == "SUCCESS":
-            print("[Skip] Instagram Reel already published.")
-            report["targets"][ig_target_key] = "ALREADY_PUBLISHED"
-        else:
-            try:
-                print("Processing Instagram Reel...")
-                media_id = publish_instagram_reel(video_public_url, instagram_caption)
-                update_target_state(video_hash, ig_target_key, "SUCCESS", platform_id=media_id)
-                report["targets"][ig_target_key] = f"SUCCESS (ID: {media_id})"
-            except Exception as e:
-                print(f"[Error] Instagram failed: {e}")
-                update_target_state(video_hash, ig_target_key, "FAILED", details={"error": str(e)})
-                report["targets"][ig_target_key] = f"FAILED ({e})"
+            # HARD FAIL: Do not swallow the error. Stop the whole script so we see the exact traceback!
+            raise RuntimeError(f"Pipeline halted because {target_key} failed to upload: {e}")
 
     print("\n" + "=" * 60)
-    print("PUBLISHING REPORT SUMMARY")
+    print("PUBLISHING REPORT SUMMARY (ALL SUCCESSFUL)")
     print("=" * 60)
-    for target, result in report["targets"].items():
-        print(f"  {target.ljust(15)} : {result}")
-    print("=" * 60)
-
     return report
