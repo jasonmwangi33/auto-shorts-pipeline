@@ -1,16 +1,15 @@
 ﻿import os
 import sys
 import json
-import requests
 import time
-import google.generativeai as genai
+import requests
 
-# Import your existing publishing engine components
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Handle Gemini import gracefully
 try:
-    from publishers.manager import publish_qc_video
+    import google.generativeai as genai
+    HAS_GEMINI = True
 except ImportError:
-    publish_qc_video = None
+    HAS_GEMINI = False
 
 WORKSPACE_DIR = "workspace"
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
@@ -18,7 +17,14 @@ AI_DATA_FILE = os.path.join(WORKSPACE_DIR, "ai_output.json")
 RENDER_DATA_FILE = os.path.join(WORKSPACE_DIR, "render_output.json")
 
 def polish_story_with_gemini(raw_text):
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    if not HAS_GEMINI:
+        return raw_text
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return raw_text
+        
+    genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
     Rewrite the following story into a highly engaging, first-person narrative optimized for a short-form video.
@@ -27,7 +33,8 @@ def polish_story_with_gemini(raw_text):
     Raw Story: {raw_text}
     """
     try:
-        return model.generate_content(prompt).text.strip()
+        response = model.generate_content(prompt)
+        return response.text.strip()
     except Exception as e:
         print(f"[!] Gemini Error: {e}")
         return raw_text
@@ -102,6 +109,12 @@ def run_stage_2():
 
 def run_stage_3():
     print("[*] Stage 3: Publishing Gateway & Uploader")
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    try:
+        from publishers.manager import publish_qc_video
+    except ImportError:
+        publish_qc_video = None
+
     if not os.path.exists(RENDER_DATA_FILE):
         print("[-] No Render data found. Exiting.")
         sys.exit(1)
@@ -134,14 +147,12 @@ def run_stage_3():
                 time.sleep(10)
             
             if completed and video_url:
-                # 1. Download the finished MP4 locally so FileNotFoundError isn't thrown
                 local_video_path = os.path.join(WORKSPACE_DIR, f"story_{index}_part_{idx+1}.mp4")
                 print(f"[*] Downloading video from Creatomate to {local_video_path}...")
                 vid_res = requests.get(video_url)
                 with open(local_video_path, "wb") as f:
                     f.write(vid_res.content)
                 
-                # 2. Hand off to your native Publisher Manager
                 print(f"[*] Dispatching Story {index} to Publisher Manager...")
                 if publish_qc_video:
                     try:
