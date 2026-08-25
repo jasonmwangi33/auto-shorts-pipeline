@@ -99,7 +99,7 @@ def run_stage_2(story_id):
         }
         try:
             response = requests.post(url, headers=headers, json=payload)
-            if response.status_code == 200:
+            if response.status_code in [200, 201]:
                 render_id = response.json().get('id')
                 print(f"[+] Render sent: Story {story_key} {formatted_title} (ID: {render_id})")
                 renders[story_key].append(render_id)
@@ -210,3 +210,4 @@ if __name__ == "__main__":
         run_stage_2(story_id)
     elif stage == "3":
         run_stage_3()
+
