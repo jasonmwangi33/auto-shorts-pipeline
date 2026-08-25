@@ -1,4 +1,4 @@
-import os
+﻿import os
 from publishers.state import calculate_video_hash, get_target_status, update_target_state
 from publishers.youtube import upload_to_youtube_channel
 from publishers.instagram import publish_instagram_reel
@@ -11,7 +11,7 @@ def publish_qc_video(video_path, job_id, qc_passed, title, youtube_description, 
     print("=" * 60)
 
     if not qc_passed:
-        raise ValueError(f"Publishing blocked: QC pass status is False for job {job_id}")
+        if not qc_passed:`n        raise ValueError(f"Publishing blocked: QC pass status is False for job {job_id}")
 
     if not os.path.isfile(video_path):
         raise FileNotFoundError(f"Video file not found at: {video_path}")
@@ -68,3 +68,4 @@ def publish_qc_video(video_path, job_id, qc_passed, title, youtube_description, 
     print("=" * 60)
 
     return report
+

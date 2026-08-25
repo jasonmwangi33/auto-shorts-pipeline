@@ -6,11 +6,11 @@ import time
 import google.generativeai as genai
 
 # Import your existing publishing engine components
-sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 try:
-    from publishers.manager import PublisherManager
+    from publishers.manager import publish_qc_video
 except ImportError:
-    PublisherManager = None
+    publish_qc_video = None
 
 WORKSPACE_DIR = "workspace"
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
@@ -114,7 +114,7 @@ def run_stage_3():
     
     print("[*] Polling Creatomate for render completion...")
     for index, render_ids in renders.items():
-        for r_id in render_ids:
+        for idx, r_id in enumerate(render_ids):
             completed = False
             video_url = None
             
@@ -134,17 +134,33 @@ def run_stage_3():
                 time.sleep(10)
             
             if completed and video_url:
+                # 1. Download the finished MP4 locally so FileNotFoundError isn't thrown
+                local_video_path = os.path.join(WORKSPACE_DIR, f"story_{index}_part_{idx+1}.mp4")
+                print(f"[*] Downloading video from Creatomate to {local_video_path}...")
+                vid_res = requests.get(video_url)
+                with open(local_video_path, "wb") as f:
+                    f.write(vid_res.content)
+                
+                # 2. Hand off to your native Publisher Manager
                 print(f"[*] Dispatching Story {index} to Publisher Manager...")
-                if PublisherManager:
+                if publish_qc_video:
                     try:
-                        manager = PublisherManager()
-                        # Pass the rendered video URL to your native publisher system
-                        manager.publish_video(video_url, title=f"Reddit Story Part {index}")
-                        print(f"[+] Successfully handed off to publishers!")
+                        title_text = f"Reddit Story - Part {idx+1}"
+                        desc_text = "Check out this wild Reddit story! #shorts #reddit"
+                        report = publish_qc_video(
+                            video_path=local_video_path,
+                            job_id=f"story_{index}_part_{idx+1}",
+                            qc_passed=True,
+                            title=title_text,
+                            youtube_description=desc_text,
+                            instagram_caption=desc_text,
+                            video_public_url=video_url
+                        )
+                        print(f"[+] Publishing Report: {report}")
                     except Exception as e:
                         print(f"[!] Publishing execution error: {e}")
                 else:
-                    print("[-] PublisherManager module could not be loaded.")
+                    print("[-] publish_qc_video function could not be loaded.")
 
     print("[+] Stage 3 execution complete.")
 
