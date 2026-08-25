@@ -1,4 +1,5 @@
 ﻿import os
+import re
 import logging
 from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip, TextClip, concatenate_videoclips
 from pipeline.visuals import VisualGenerator
@@ -6,7 +7,7 @@ from pipeline.visuals import VisualGenerator
 logger = logging.getLogger("renderer")
 
 class RenderResult:
-    """Result object with the exact filename expected by render_worker.py."""
+    """Result object with absolute paths and strict validation."""
     def __init__(self, success: bool, video_path: str):
         abs_path = os.path.abspath(video_path)
         self.success = success
@@ -18,26 +19,51 @@ class Renderer:
         self.config = config or {}
         self.visual_gen = VisualGenerator()
 
+    def _sanitize_script(self, raw_text) -> str:
+        """Removes accidental edit plan metadata, config dicts, and code syntax from subtitles."""
+        if not raw_text:
+            return "This is a wild story about what happened."
+            
+        text = str(raw_text)
+        
+        # If it contains code/edit plan markers, strip them out
+        if "EDITPLAN" in text or "SUBTITLES_CONFIG" in text or "NARATION" in text:
+            logger.warning("Detected raw config/edit plan string in script text. Sanitizing...")
+            text = re.sub(r'EDITPLAN\(.*?\)', '', text)
+            text = re.sub(r'[A-Z_]+=\{.*?\}', '', text, flags=re.DOTALL)
+            text = re.sub(r'[A-Z_]+=[^,\)]+', '', text)
+            
+        # Clean up punctuation and extra whitespace
+        cleaned = re.sub(r'[^a-zA-Z0-9\s.,?!\-\']', '', text)
+        cleaned = " ".join(cleaned.split())
+        
+        if len(cleaned) < 5:
+            return "You won't believe what happened to me yesterday."
+            
+        return cleaned
+
     def render(self, plan, narration_path, output_dir, job_id, headline=None, subreddit=None, visual_theme=None, **kwargs):
-        """Compatibility wrapper for orchestrator.py matching render_worker.py naming ({job_id}_output.mp4)."""
+        """Compatibility wrapper for orchestrator.py with rigorous text sanitization."""
         os.makedirs(output_dir, exist_ok=True)
-        # Match render_worker.py's expected filename format: {job_id}_output.mp4
         output_path = os.path.abspath(os.path.join(output_dir, f"{job_id}_output.mp4"))
+        
+        sanitized_script = self._sanitize_script(plan)
+        
         seed = {
             "id": job_id,
-            "script": plan if isinstance(plan, str) else str(plan),
+            "script": sanitized_script,
             "audio_path": str(narration_path) if narration_path else None,
             "theme": visual_theme
         }
         return self.render_short(seed, output_path)
 
     def render_short(self, seed: dict, output_path: str):
-        """Renders the short with fast-paced 2x background, correct naming, and kinetic captions."""
+        """Renders the short with clean sanitized subtitles, 2x tactile background, and progress bar."""
         logger.info(f"Starting render for seed: {seed.get('id', 'unknown')}")
         
         output_path = os.path.abspath(output_path)
         audio_path = str(seed.get("audio_path")) if seed.get("audio_path") else None
-        script_text = seed.get("script", seed.get("story", "This is a story."))
+        script_text = self._sanitize_script(seed.get("script", seed.get("story", "")))
         
         if not audio_path or not os.path.exists(audio_path):
             raise RuntimeError(f"Audio file missing for render: {audio_path}")
@@ -59,7 +85,7 @@ class Renderer:
         if words:
             chunk_size = 2
             word_chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
-            chunk_duration = duration / len(word_chunks)
+            chunk_duration = duration / max(len(word_chunks), 1)
             
             current_time = 0.0
             for chunk in word_chunks:
@@ -103,7 +129,6 @@ class Renderer:
                 try: reader.close()
                 except: pass
 
-        # Force file system sync and verify file is non-empty before returning
         if hasattr(os, 'sync'):
             os.sync()
             
