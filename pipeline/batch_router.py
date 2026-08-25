@@ -4,7 +4,6 @@ import json
 import time
 import requests
 
-# Handle Gemini import gracefully
 try:
     import google.generativeai as genai
     HAS_GEMINI = True
@@ -17,14 +16,9 @@ AI_DATA_FILE = os.path.join(WORKSPACE_DIR, "ai_output.json")
 RENDER_DATA_FILE = os.path.join(WORKSPACE_DIR, "render_output.json")
 
 def polish_story_with_gemini(raw_text):
-    if not HAS_GEMINI:
+    if not HAS_GEMINI or not os.getenv("GEMINI_API_KEY"):
         return raw_text
-    
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return raw_text
-        
-    genai.configure(api_key=api_key)
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
     Rewrite the following story into a highly engaging, first-person narrative optimized for a short-form video.
@@ -47,7 +41,7 @@ def split_story(text, max_words=150):
     return [(" ".join(words[:mid]), "Part 1"), (" ".join(words[mid:]), "Part 2")]
 
 def run_stage_1():
-    print("[*] Stage 1: AI Processing System")
+    print("[*] Stage 1: AI Scavenger & Processing System")
     processed = {}
     for i in range(1, 8):
         story = os.getenv(f"STORY_{i}")
@@ -63,10 +57,10 @@ def run_stage_1():
 
     with open(AI_DATA_FILE, "w") as f:
         json.dump(processed, f)
-    print(f"[+] AI processing complete. Scripts secured for Stage 2.")
+    print(f"[+] AI processing complete. Scripts secured for Matrix Workers.")
 
-def run_stage_2():
-    print("[*] Stage 2: Cloud Rendering Engine")
+def run_stage_2(story_id):
+    print(f"[*] Stage 2: Cloud Rendering Worker for Story ID: {story_id}")
     if not os.path.exists(AI_DATA_FILE):
         print("[-] No AI data found. Exiting.")
         sys.exit(1)
@@ -74,59 +68,86 @@ def run_stage_2():
     with open(AI_DATA_FILE, "r") as f:
         processed = json.load(f)
         
+    story_key = str(story_id)
+    if story_key not in processed:
+        print(f"[*] No story content found for slot {story_id}. Skipping worker.")
+        return
+
     api_key = os.getenv("CREATOMATE_API_KEY")
     template_id = os.getenv("CREATOMATE_TEMPLATE_ID")
     url = "https://api.creatomate.com/v2/renders"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     
+    chunks = processed[story_key]
     renders = {}
-    for index, chunks in processed.items():
-        renders[index] = []
-        for text, part_title in chunks:
-            formatted_title = part_title.upper()
-            payload = {
-                "template_id": template_id,
-                "modifications": {
-                    "Title-Overlay": formatted_title,
-                    "Story-Text": text
-                }
+    if os.path.exists(RENDER_DATA_FILE):
+        try:
+            with open(RENDER_DATA_FILE, "r") as f:
+                renders = json.load(f)
+        except:
+            pass
+
+    renders[story_key] = []
+    for idx, (text, part_title) in enumerate(chunks):
+        formatted_title = part_title.upper() if part_title else f"PART {idx+1}"
+        payload = {
+            "template_id": template_id,
+            "modifications": {
+                "Title-Overlay": formatted_title,
+                "Story-Text": text
             }
-            try:
-                response = requests.post(url, headers=headers, json=payload)
-                if response.status_code == 200:
-                    render_id = response.json().get('id')
-                    print(f"[+] Render sent: Story {index} {formatted_title} (ID: {render_id})")
-                    renders[index].append(render_id)
-                else:
-                    print(f"[-] API Error: {response.text}")
-            except Exception as e:
-                print(f"[!] Error: {e}")
-            time.sleep(3)
-            
+        }
+        try:
+            response = requests.post(url, headers=headers, json=payload)
+            if response.status_code == 200:
+                render_id = response.json().get('id')
+                print(f"[+] Render sent: Story {story_key} {formatted_title} (ID: {render_id})")
+                renders[story_key].append(render_id)
+            else:
+                print(f"[-] API Error: {response.text}")
+        except Exception as e:
+            print(f"[!] Error: {e}")
+        time.sleep(2)
+        
     with open(RENDER_DATA_FILE, "w") as f:
         json.dump(renders, f)
-    print(f"[+] Render jobs dispatched. IDs secured for Stage 3.")
+    print(f"[+] Render state saved for Story {story_key}.")
 
 def run_stage_3():
-    print("[*] Stage 3: Publishing Gateway & Uploader")
+    print("[*] Stage 3: Unified Publisher & Uploader")
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     try:
         from publishers.manager import publish_qc_video
     except ImportError:
         publish_qc_video = None
 
-    if not os.path.exists(RENDER_DATA_FILE):
-        print("[-] No Render data found. Exiting.")
+    # Gather all render state files from workspace_all (matrix artifacts download structure)
+    all_renders = {}
+    workspace_all = "workspace_all"
+    if os.path.exists(workspace_all):
+        for root, dirs, files in os.walk(workspace_all):
+            if "render_output.json" in files:
+                try:
+                    with open(os.path.join(root, "render_output.json"), "r") as f:
+                        data = json.load(f)
+                        all_renders.update(data)
+                except Exception as e:
+                    print(f"[-] Error reading render state artifact: {e}")
+
+    # Fallback to local workspace if running single node
+    if not all_renders and os.path.exists(RENDER_DATA_FILE):
+        with open(RENDER_DATA_FILE, "r") as f:
+            all_renders = json.load(f)
+
+    if not all_renders:
+        print("[-] No render outputs found across matrix slots. Exiting.")
         sys.exit(1)
-        
-    with open(RENDER_DATA_FILE, "r") as f:
-        renders = json.load(f)
-        
+
     api_key = os.getenv("CREATOMATE_API_KEY")
     headers = {"Authorization": f"Bearer {api_key}"}
     
-    print("[*] Polling Creatomate for render completion...")
-    for index, render_ids in renders.items():
+    print("[*] Polling Creatomate for render completion across all slots...")
+    for index, render_ids in all_renders.items():
         for idx, r_id in enumerate(render_ids):
             completed = False
             video_url = None
@@ -153,7 +174,7 @@ def run_stage_3():
                 with open(local_video_path, "wb") as f:
                     f.write(vid_res.content)
                 
-                print(f"[*] Dispatching Story {index} to Publisher Manager...")
+                print(f"[*] Dispatching Story {index} Part {idx+1} to Publisher Manager...")
                 if publish_qc_video:
                     try:
                         title_text = f"Reddit Story - Part {idx+1}"
@@ -170,6 +191,7 @@ def run_stage_3():
                         print(f"[+] Publishing Report: {report}")
                     except Exception as e:
                         print(f"[!] Publishing execution error: {e}")
+                        raise
                 else:
                     print("[-] publish_qc_video function could not be loaded.")
 
@@ -181,6 +203,10 @@ if __name__ == "__main__":
         sys.exit(1)
         
     stage = sys.argv[1]
-    if stage == "1": run_stage_1()
-    elif stage == "2": run_stage_2()
-    elif stage == "3": run_stage_3()
+    if stage == "1":
+        run_stage_1()
+    elif stage == "2":
+        story_id = sys.argv[2] if len(sys.argv) > 2 else 1
+        run_stage_2(story_id)
+    elif stage == "3":
+        run_stage_3()
