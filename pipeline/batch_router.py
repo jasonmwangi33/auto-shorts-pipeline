@@ -1,13 +1,18 @@
 ﻿import os
+import sys
+import json
 import requests
 import time
 import google.generativeai as genai
 
-# Configure Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-1.5-flash')
+WORKSPACE_DIR = "workspace"
+os.makedirs(WORKSPACE_DIR, exist_ok=True)
+AI_DATA_FILE = os.path.join(WORKSPACE_DIR, "ai_output.json")
+RENDER_DATA_FILE = os.path.join(WORKSPACE_DIR, "render_output.json")
 
 def polish_story_with_gemini(raw_text):
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
     Rewrite the following story into a highly engaging, first-person narrative optimized for a short-form video.
     Keep it strictly chronological (Hook -> Context -> Escalation -> Consequence -> Payoff). 
@@ -15,11 +20,10 @@ def polish_story_with_gemini(raw_text):
     Raw Story: {raw_text}
     """
     try:
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        return model.generate_content(prompt).text.strip()
     except Exception as e:
-        print(f"[!] Gemini AI Error: {e}")
-        return raw_text 
+        print(f"[!] Gemini Error: {e}")
+        return raw_text
 
 def split_story(text, max_words=150):
     words = text.split()
@@ -28,73 +32,86 @@ def split_story(text, max_words=150):
     mid = len(words) // 2
     return [(" ".join(words[:mid]), "Part 1"), (" ".join(words[mid:]), "Part 2")]
 
-def send_to_creatomate(story_text, part_title, index):
+def run_stage_1():
+    print("[*] Stage 1: AI Processing System")
+    processed = {}
+    for i in range(1, 8):
+        story = os.getenv(f"STORY_{i}")
+        if story and len(story.strip()) > 0:
+            print(f"[*] AI Rewriting Story {i}...")
+            polished = polish_story_with_gemini(story)
+            processed[str(i)] = split_story(polished)
+            time.sleep(2)
+    
+    if not processed:
+        print("[-] No stories provided. Stopping pipeline.")
+        sys.exit(0)
+
+    with open(AI_DATA_FILE, "w") as f:
+        json.dump(processed, f)
+    print(f"[+] AI processing complete. Scripts secured for Stage 2.")
+
+def run_stage_2():
+    print("[*] Stage 2: Cloud Rendering Engine")
+    if not os.path.exists(AI_DATA_FILE):
+        print("[-] No AI data found. Exiting.")
+        sys.exit(1)
+        
+    with open(AI_DATA_FILE, "r") as f:
+        processed = json.load(f)
+        
     api_key = os.getenv("CREATOMATE_API_KEY")
     template_id = os.getenv("CREATOMATE_TEMPLATE_ID")
-    
-    if not api_key or not template_id:
-        print(f"[!] Missing API credentials.")
-        return None
-        
     url = "https://api.creatomate.com/v2/renders"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "template_id": template_id,
-        "modifications": {
-            "Title-Overlay": part_title.upper(),
-            "Story-Text": story_text 
-        }
-    }
     
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        if response.status_code == 200:
-            render_id = response.json().get('id')
-            print(f"[+] Render started for Story {index} {part_title.upper()}. ID: {render_id}")
-            return render_id
-        else:
-            print(f"[-] Render Error: {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"[!] Connection Error: {e}")
-    return None
-
-def main():
-    print("\n==================================================")
-    print("  STAGE 1: AI SYSTEM PROCESSING")
-    print("==================================================")
-    processed_scripts = {}
-    
-    for i in range(1, 8):
-        story_input = os.getenv(f"STORY_{i}")
-        if story_input and len(story_input.strip()) > 0:
-            print(f"[*] Processing Story {i} via AI...")
-            polished_script = polish_story_with_gemini(story_input)
-            chunks = split_story(polished_script)
-            processed_scripts[i] = chunks
-            time.sleep(2) # Prevent API rate limits
-
-    if not processed_scripts:
-        print("[-] No stories provided. Exiting pipeline.")
-        return
-
-    print("\n==================================================")
-    print("  STAGE 2: CLOUD RENDERING & FILTERS")
-    print("==================================================")
-    active_renders = []
-    
-    for index, chunks in processed_scripts.items():
+    renders = {}
+    for index, chunks in processed.items():
+        renders[index] = []
         for text, part_title in chunks:
-            render_id = send_to_creatomate(text, part_title, index)
-            if render_id:
-                active_renders.append(render_id)
-            time.sleep(3) # Stagger API payload requests
+            formatted_title = part_title.upper()
+            payload = {
+                "template_id": template_id,
+                "modifications": {
+                    "Title-Overlay": formatted_title,
+                    "Story-Text": text
+                }
+            }
+            try:
+                response = requests.post(url, headers=headers, json=payload)
+                if response.status_code == 200:
+                    render_id = response.json().get('id')
+                    print(f"[+] Render sent: Story {index} {formatted_title} (ID: {render_id})")
+                    renders[index].append(render_id)
+                else:
+                    print(f"[-] API Error: {response.text}")
+            except Exception as e:
+                print(f"[!] Error: {e}")
+            time.sleep(3)
+            
+    with open(RENDER_DATA_FILE, "w") as f:
+        json.dump(renders, f)
+    print(f"[+] Render jobs dispatched. IDs secured for Stage 3.")
 
-    print("\n==================================================")
-    print("  STAGE 3: PUBLISHING")
-    print("==================================================")
-    print(f"[*] Awaiting completion of {len(active_renders)} render tasks...")
-    print("[*] System initialized for auto-publishing APIs. (Awaiting Platform Integration)")
-    # Future logic: Loop through active_renders, wait for status="succeeded", then push to social APIs.
+def run_stage_3():
+    print("[*] Stage 3: Publishing Gateway")
+    if not os.path.exists(RENDER_DATA_FILE):
+        print("[-] No Render data found. Exiting.")
+        sys.exit(1)
+        
+    with open(RENDER_DATA_FILE, "r") as f:
+        renders = json.load(f)
+        
+    total_renders = sum(len(ids) for ids in renders.values())
+    print(f"[*] Tracking {total_renders} active Creatomate renders...")
+    print("[+] System primed. Awaiting your Meta/YouTube API publishing logic.")
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Error: Specify a stage (1, 2, or 3)")
+        sys.exit(1)
+        
+    stage = sys.argv[1]
+    if stage == "1": run_stage_1()
+    elif stage == "2": run_stage_2()
+    elif stage == "3": run_stage_3()

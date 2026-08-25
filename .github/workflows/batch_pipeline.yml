@@ -33,24 +33,21 @@ on:
         type: string
 
 jobs:
-  process-and-render:
+  ai-processing:
+    name: 🧠 AI Story Processing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
-
+        uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: Install Requirements
         run: pip install requests google-generativeai
-
-      - name: Run Batch Router
+      - name: Run Gemini AI (Stage 1)
         env:
-          CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
-          CREATOMATE_TEMPLATE_ID: ${{ secrets.CREATOMATE_TEMPLATE_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           STORY_1: ${{ inputs.story_1 }}
           STORY_2: ${{ inputs.story_2 }}
           STORY_3: ${{ inputs.story_3 }}
@@ -58,5 +55,61 @@ jobs:
           STORY_5: ${{ inputs.story_5 }}
           STORY_6: ${{ inputs.story_6 }}
           STORY_7: ${{ inputs.story_7 }}
-        run: python pipeline/batch_router.py
+        run: python pipeline/batch_router.py 1
+      - name: Pass Data to Render Stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-workspace
+          path: workspace/ai_output.json
+          retention-days: 1
 
+  cloud-rendering:
+    name: 🎬 Cloud Rendering
+    needs: ai-processing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install Requirements
+        run: pip install requests google-generativeai
+      - name: Download AI Scripts
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-workspace
+          path: workspace
+      - name: Run Creatomate (Stage 2)
+        env:
+          CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
+          CREATOMATE_TEMPLATE_ID: ${{ secrets.CREATOMATE_TEMPLATE_ID }}
+        run: python pipeline/batch_router.py 2
+      - name: Pass Data to Publish Stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-workspace
+          path: workspace/render_output.json
+          retention-days: 1
+
+  publishing:
+    name: 🚀 Auto-Publishing
+    needs: cloud-rendering
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install Requirements
+        run: pip install requests google-generativeai
+      - name: Download Render Status
+        uses: actions/download-artifact@v4
+        with:
+          name: render-workspace
+          path: workspace
+      - name: Run Publisher (Stage 3)
+        run: python pipeline/batch_router.py 3
