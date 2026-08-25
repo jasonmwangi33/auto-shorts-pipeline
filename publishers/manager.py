@@ -7,11 +7,9 @@ MAX_YOUTUBE_ACCOUNTS = 6
 
 def publish_qc_video(video_path, job_id, qc_passed, title, youtube_description, instagram_caption, video_public_url=None):
     print("=" * 60)
-    print(f"Starting Publishing Layer for Job ID: {job_id}")
-    print("=" * 60)
-
+    
     if not qc_passed:
-        if not qc_passed:`n        raise ValueError(f"Publishing blocked: QC pass status is False for job {job_id}")
+        raise ValueError(f"Publishing blocked: QC pass status is False for job {job_id}")
 
     if not os.path.isfile(video_path):
         raise FileNotFoundError(f"Video file not found at: {video_path}")
@@ -68,5 +66,3 @@ def publish_qc_video(video_path, job_id, qc_passed, title, youtube_description, 
     print("=" * 60)
 
     return report
-
-
