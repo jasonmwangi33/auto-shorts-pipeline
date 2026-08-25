@@ -1,0 +1,61 @@
+﻿name: Batch Story Rendering Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      story_1:
+        description: 'Story 1 Text'
+        required: false
+        type: string
+      story_2:
+        description: 'Story 2 Text'
+        required: false
+        type: string
+      story_3:
+        description: 'Story 3 Text'
+        required: false
+        type: string
+      story_4:
+        description: 'Story 4 Text'
+        required: false
+        type: string
+      story_5:
+        description: 'Story 5 Text'
+        required: false
+        type: string
+      story_6:
+        description: 'Story 6 Text'
+        required: false
+        type: string
+      story_7:
+        description: 'Story 7 Text'
+        required: false
+        type: string
+
+jobs:
+  process-and-render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Requirements
+        run: pip install requests
+
+      - name: Run Batch Router
+        env:
+          CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
+          CREATOMATE_TEMPLATE_ID: ${{ secrets.CREATOMATE_TEMPLATE_ID }}
+          STORY_1: ${{ inputs.story_1 }}
+          STORY_2: ${{ inputs.story_2 }}
+          STORY_3: ${{ inputs.story_3 }}
+          STORY_4: ${{ inputs.story_4 }}
+          STORY_5: ${{ inputs.story_5 }}
+          STORY_6: ${{ inputs.story_6 }}
+          STORY_7: ${{ inputs.story_7 }}
+        run: python pipeline/batch_router.py
