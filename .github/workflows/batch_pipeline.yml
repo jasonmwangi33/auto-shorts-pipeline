@@ -111,5 +111,11 @@ jobs:
         with:
           name: render-workspace
           path: workspace
-      - name: Run Publisher (Stage 3)
+      - name: Run Publisher & Uploader (Stage 3)
+        env:
+          CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
+          YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
+          YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
         run: python pipeline/batch_router.py 3
