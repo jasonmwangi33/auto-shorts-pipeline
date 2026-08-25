@@ -6,7 +6,7 @@ from pipeline.visuals import VisualGenerator
 logger = logging.getLogger("renderer")
 
 class RenderResult:
-    """Result object with absolute paths to satisfy orchestrator.py validation."""
+    """Result object with the exact filename expected by render_worker.py."""
     def __init__(self, success: bool, video_path: str):
         abs_path = os.path.abspath(video_path)
         self.success = success
@@ -19,9 +19,10 @@ class Renderer:
         self.visual_gen = VisualGenerator()
 
     def render(self, plan, narration_path, output_dir, job_id, headline=None, subreddit=None, visual_theme=None, **kwargs):
-        """Compatibility wrapper for orchestrator.py returning absolute paths."""
+        """Compatibility wrapper for orchestrator.py matching render_worker.py naming ({job_id}_output.mp4)."""
         os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.abspath(os.path.join(output_dir, f"{job_id}.mp4"))
+        # Match render_worker.py's expected filename format: {job_id}_output.mp4
+        output_path = os.path.abspath(os.path.join(output_dir, f"{job_id}_output.mp4"))
         seed = {
             "id": job_id,
             "script": plan if isinstance(plan, str) else str(plan),
@@ -31,7 +32,7 @@ class Renderer:
         return self.render_short(seed, output_path)
 
     def render_short(self, seed: dict, output_path: str):
-        """Renders the short with fast-paced 2x background, absolute path verification, and kinetic captions."""
+        """Renders the short with fast-paced 2x background, correct naming, and kinetic captions."""
         logger.info(f"Starting render for seed: {seed.get('id', 'unknown')}")
         
         output_path = os.path.abspath(output_path)
