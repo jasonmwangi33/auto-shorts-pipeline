@@ -59,7 +59,8 @@ class JobOrchestrator:
         update_job_state(job_id, JobState.RENDERING)
                 # Extract script string cleanly from plan object before renderer boundary
         plan_script = getattr(plan, 'script', getattr(plan, 'story', getattr(plan, 'text', str(plan))))
-        render_result = renderer.render(plan_script, narration_path, output_dir, job_id, headline=headline, subreddit=subreddit, visual_theme=selected_theme)
+        render_result = renderer.render(
+            plan.narration_script, narration_path, output_dir, job_id, headline=headline, subreddit=subreddit, visual_theme=selected_theme, word_timings=plan.narration_word_timings)
 
         if not render_result.success:
             print(f"[!] Render fatally failed. Skipping QC and artifacts.")
