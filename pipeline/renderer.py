@@ -20,44 +20,33 @@ class Renderer:
 
     def _extract_story_text(self, plan) -> str:
         """
-        Aggressively strips and blocks any configuration dicts, edit plans, 
-        or code metadata from ever becoming video subtitles.
+        Intelligently extracts story text while only blocking actual raw code/config objects,
+        preventing false-positive fallbacks.
         """
-        fallback_stories = [
-            "My car was totaled, and now the kid who hit me is demanding I pay for his damages.",
-            "I never expected my own family to turn against me over a stupid inheritance dispute.",
-            "My boss thought he could fire me quietly until I uploaded the security footage online."
-        ]
-        
         if plan is None:
-            return fallback_stories[0]
+            return "When I was nineteen, my entire life changed in a single terrifying second."
 
-        # If it's a dictionary, look for actual text keys and reject config keys
         if isinstance(plan, dict):
             for key in ["script", "story", "text", "narrative", "content"]:
                 if key in plan and plan[key]:
                     val = str(plan[key])
-                    if not any(k in val.upper() for k in ["EDITPLAN", "SUBTITLES", "CONFIG", "STROKE", "OPACITY"]):
+                    # Only reject if it's genuinely a raw config dump
+                    if "EDITPLAN(" not in val and "SUBTITLES_CONFIG" not in val:
                         return val
 
         text = str(plan)
         
-        # NUCLEAR FILTER: If the text contains any code parameters or config tokens, reject it entirely
-        config_keywords = [
-            "EDITPLAN", "SUBTITLES", "CONFIG", "FONT", "STROKE", 
-            "OPACITY", "WIDTH", "DURATION", "COLOR", "ROUND", "{", "}"
-        ]
-        
-        if any(keyword in text.upper() for keyword in config_keywords):
-            logger.error(f"BLOCKED CONFIG LEAK IN RENDERER: Tried to render config string -> {text[:100]}...")
-            return fallback_stories[hash(text) % len(fallback_stories)]
+        # Only block if it's an actual raw python config dictionary representation
+        if text.strip().startswith("{") and ("'fontsize'" in text or "'stroke_color'" in text):
+            logger.error("Blocked raw config dictionary render attempt.")
+            return "When I was nineteen, my entire life changed in a single terrifying second."
                 
-        # Clean up standard punctuation
+        # Clean text for subtitle rendering
         cleaned = re.sub(r'[^a-zA-Z0-9\s.,?!\-\'$]', '', text)
         cleaned = " ".join(cleaned.split())
         
-        if len(cleaned) < 15:
-            return fallback_stories[0]
+        if len(cleaned) < 10:
+            return "When I was nineteen, my entire life changed in a single terrifying second."
             
         return cleaned
 
@@ -95,6 +84,7 @@ class Renderer:
         
         words = script_text.split()
         if words:
+            # Chunk into 2 words for rapid, high-retention pacing
             chunk_size = 2
             word_chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
             chunk_duration = duration / max(len(word_chunks), 1)
@@ -107,11 +97,11 @@ class Renderer:
                 try:
                     txt_clip = TextClip(
                         chunk.upper(),
-                        fontsize=95,
+                        fontsize=110,         # Massive size matching top TikTok channels
                         color='white',
                         stroke_color='black',
-                        stroke_width=6,
-                        font='Arial-Bold',
+                        stroke_width=8,       # Extra-thick outline for maximum contrast
+                        font='Impact',        # Ultra-bold native font matching viral video aesthetics
                         size=(1000, None),
                         method='caption'
                     ).set_start(current_time).set_duration(min(chunk_duration, duration - current_time)).set_position(('center', 'center'))
