@@ -10,31 +10,38 @@ def configure_genai():
         genai.configure(api_key=api_key)
 
 def generate_narrative_script(raw_source_text: str) -> str:
-    """Transforms raw Reddit text into a gripping, first-person narrative arc with natural hooks and payoffs."""
+    """
+    Transforms raw Reddit text into a gripping, first-person narrative story 
+    strictly avoiding abstract shower thoughts or generic philosophical musings.
+    """
     configure_genai()
     model_name = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
     model = genai.GenerativeModel(model_name)
     
     prompt = f"""
-You are an expert viral storyteller specializing in gripping Reddit narratives for short-form video.
-Analyze the following source text and reconstruct it into a coherent, compelling first-person narrative script.
+You are an expert viral storyteller specializing in gripping Reddit personal narratives for short-form video.
+Analyze the following source text. 
+
+CRITICAL RULE: 
+- Reject abstract philosophical musings, shower thoughts, or vague observations (e.g., "does anyone else notice X about the human brain"). 
+- ONLY process posts that describe a real interpersonal conflict, family drama, relationship dilemma, workplace tension, or shocking personal event that happened to someone.
 
 SOURCE TEXT:
 {raw_source_text}
 
-STRICT INSTRUCTIONS:
-1. IDENTIFY THE CORE CONFLICT: Determine if this is a personal story, AITA conflict, relationship dilemma, or question. Preserve the original framing and ambiguity if the source asks a question.
-2. NARRATIVE ARC: Structure the script with:
-   - A compelling HOOK (a natural question like "Would you have done the same?", "Was she actually in the wrong here?", or an intriguing setup).
-   - SETUP & CONTEXT (Who is involved, what was the situation).
-   - DEVELOPMENT & ESCALATION (The tension building up).
-   - OUTCOME & PAYOFF / QUESTION (Ending with the natural reflection or question for the audience).
-3. TONE & STYLE: Must sound like a real person naturally telling another person what happened. Conversational, high-engagement, perfectly paced. Avoid robotic summaries.
-4. FORMAT: Output only the clean narration script text without markdown headers.
+STRICT NARRATIVE STRUCTURE TO BUILD:
+1. THE HOOK: Start directly with the action or a gripping dilemma (e.g., "When I was 8 years old...", "My husband thought he could hide this from me..."). Never use generic AI intros like "Here's a hot take."
+2. THE SETUP & CONTEXT: Explain who was involved and what the baseline situation was.
+3. THE ESCALATION: Detail the conflict or turning point where things went wrong.
+4. THE PAYOFF / QUESTION: End on the shocking outcome or a natural question ("Was I wrong for doing what I did?", "Would you have done the same?").
+5. TONE: Natural, conversational, like someone telling a friend what happened. No markdown, no meta-commentary, clean narration text only.
 """
+
     try:
         response = model.generate_content(prompt)
-        return response.text.strip()
+        script_text = response.text.strip()
+        logger.info("Successfully generated strict personal narrative script.")
+        return script_text
     except Exception as e:
-        logger.error(f"Failed to generate narrative script: {e}")
+        logger.error(f"Failed to generate narrative script via Gemini: {e}")
         return raw_source_text
