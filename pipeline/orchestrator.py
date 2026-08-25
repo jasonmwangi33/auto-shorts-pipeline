@@ -1,4 +1,4 @@
-import json
+﻿import json
 import random
 import subprocess
 from pathlib import Path
@@ -57,7 +57,9 @@ class JobOrchestrator:
         print(f"[*] Rendering {job_id} with independent visual theme: '{selected_theme}'")
         renderer = Renderer(self.config)
         update_job_state(job_id, JobState.RENDERING)
-        render_result = renderer.render(plan, narration_path, output_dir, job_id, headline=headline, subreddit=subreddit, visual_theme=selected_theme)
+                # Extract script string cleanly from plan object before renderer boundary
+        plan_script = getattr(plan, 'script', getattr(plan, 'story', getattr(plan, 'text', str(plan))))
+        render_result = renderer.render(plan_script, narration_path, output_dir, job_id, headline=headline, subreddit=subreddit, visual_theme=selected_theme)
 
         if not render_result.success:
             print(f"[!] Render fatally failed. Skipping QC and artifacts.")
@@ -94,3 +96,4 @@ class JobOrchestrator:
         json_dump(qc_manifest, output_dir / f"{job_id}_qc.json")
         print(f"[SUCCESS] Job {job_id} rendered and packaged successfully!")
         update_job_state(job_id, JobState.APPROVED)
+
