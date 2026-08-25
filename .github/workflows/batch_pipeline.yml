@@ -45,7 +45,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install Requirements
-        run: pip install requests
+        run: pip install requests google-generativeai
 
       - name: Run Batch Router
         env:
@@ -59,3 +59,4 @@ jobs:
           STORY_6: ${{ inputs.story_6 }}
           STORY_7: ${{ inputs.story_7 }}
         run: python pipeline/batch_router.py
+
