@@ -5,6 +5,13 @@ import requests
 import time
 import google.generativeai as genai
 
+# Import your existing publishing engine components
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+try:
+    from publishers.manager import PublisherManager
+except ImportError:
+    PublisherManager = None
+
 WORKSPACE_DIR = "workspace"
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
 AI_DATA_FILE = os.path.join(WORKSPACE_DIR, "ai_output.json")
@@ -105,17 +112,12 @@ def run_stage_3():
     api_key = os.getenv("CREATOMATE_API_KEY")
     headers = {"Authorization": f"Bearer {api_key}"}
     
-    # Check credentials availability
-    yt_accounts = os.getenv("YOUTUBE_ACCOUNTS_JSON")
-    ig_token = os.getenv("IG_ACCESS_TOKEN")
-    
     print("[*] Polling Creatomate for render completion...")
     for index, render_ids in renders.items():
         for r_id in render_ids:
             completed = False
             video_url = None
             
-            # Poll status until ready (max ~5 minutes)
             for _ in range(30):
                 res = requests.get(f"https://api.creatomate.com/v2/renders/{r_id}", headers=headers)
                 if res.status_code == 200:
@@ -132,14 +134,17 @@ def run_stage_3():
                 time.sleep(10)
             
             if completed and video_url:
-                # --- YouTube / Instagram Publishing Hook ---
-                print(f"[*] Dispatching Story {index} video to publishing handlers...")
-                if yt_accounts:
-                    print(f"[+] YouTube publishing credentials detected. Uploading video...")
-                    # Integration hook for your YouTube uploader script utilizing YOUTUBE_ACCOUNTS_JSON
-                if ig_token:
-                    print(f"[+] Instagram publishing credentials detected. Pushing to Reels...")
-                    # Integration hook for Instagram Graph API utilizing IG_ACCESS_TOKEN & IG_USER_ID
+                print(f"[*] Dispatching Story {index} to Publisher Manager...")
+                if PublisherManager:
+                    try:
+                        manager = PublisherManager()
+                        # Pass the rendered video URL to your native publisher system
+                        manager.publish_video(video_url, title=f"Reddit Story Part {index}")
+                        print(f"[+] Successfully handed off to publishers!")
+                    except Exception as e:
+                        print(f"[!] Publishing execution error: {e}")
+                else:
+                    print("[-] PublisherManager module could not be loaded.")
 
     print("[+] Stage 3 execution complete.")
 
