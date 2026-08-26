@@ -59,6 +59,12 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           python pipeline/batch_router.py 1
+        - name: Upload Workspace
+          uses: actions/upload-artifact@v4
+          with:
+            name: shared-workspace
+            path: workspace/
+            overwrite: true
       - name: Pass Data to Render Stage
         uses: actions/upload-artifact@v4
         with:
@@ -89,10 +95,21 @@ jobs:
           CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           CREATOMATE_TEMPLATE_ID: ${{ secrets.CREATOMATE_TEMPLATE_ID }}
+        - name: Download Workspace
+          uses: actions/download-artifact@v4
+          with:
+            name: shared-workspace
+            path: workspace/
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           python pipeline/batch_router.py 2
+        - name: Upload Workspace
+          uses: actions/upload-artifact@v4
+          with:
+            name: shared-workspace
+            path: workspace/
+            overwrite: true
       - name: Pass Data to Publish Stage
         uses: actions/upload-artifact@v4
         with:
@@ -126,6 +143,11 @@ jobs:
           YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        - name: Download Workspace
+          uses: actions/download-artifact@v4
+          with:
+            name: shared-workspace
+            path: workspace/
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
