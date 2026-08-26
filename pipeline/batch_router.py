@@ -64,7 +64,7 @@ def split_story(text):
         ]
 
 async def generate_tts(text, output_path):
-    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+28%")
+    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+38%")
     word_events = []
     audio_chunks = []
     async for chunk in communicate.stream():
