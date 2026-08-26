@@ -209,7 +209,7 @@ def run_stage_3():
                         completed = True
                         break
                     elif status == "failed":
-                        raise RuntimeError(f"CRITICAL FAIL: Creatomate failed to render video ID {r_id}. Check template constraints.")
+                        raise RuntimeError(f"CRITICAL FAIL: Creatomate failed on {r_id}. Error: {data.get('error_message', 'Unknown')}")
                 time.sleep(10)
             
             if not completed or not video_url:
@@ -250,6 +250,7 @@ if __name__ == "__main__":
         run_stage_2(story_id)
     elif stage == "3":
         run_stage_3()
+
 
 
 
