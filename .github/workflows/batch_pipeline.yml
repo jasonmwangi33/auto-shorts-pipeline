@@ -36,7 +36,7 @@ jobs:
   ai-processing:
     name: AI Story Processing
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -57,7 +57,7 @@ jobs:
           STORY_7: ${{ inputs.story_7 }}
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-ai.txt
           python pipeline/batch_router.py 1
       - name: Upload Workspace
         uses: actions/upload-artifact@v4
@@ -89,7 +89,7 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-render.txt
           python pipeline/batch_router.py 2
       - name: Upload Workspace
         uses: actions/upload-artifact@v4
@@ -102,7 +102,7 @@ jobs:
     name: Auto-Publishing
     needs: cloud-rendering
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -119,5 +119,5 @@ jobs:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-publish.txt
           python pipeline/batch_router.py 3
