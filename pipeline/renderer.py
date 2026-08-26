@@ -1,111 +1,100 @@
 ﻿import os
-import gc
-import numpy as np
-from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
-from moviepy.editor import AudioFileClip, ImageClip, CompositeVideoClip
-from pipeline.visuals import VisualGenerator
+import random
+import requests
+from moviepy.editor import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
+from moviepy.video.fx.all import crop, resize
 
 class RenderResult:
-    def __init__(self, video_path):
-        self.video_path = video_path
+    def __init__(self, path):
+        self.video_path = path
 
 class Renderer:
     def __init__(self):
-        self.visual_gen = VisualGenerator()
+        self.workspace = "workspace"
+        os.makedirs(self.workspace, exist_ok=True)
+        self.pexels_key = os.getenv("PEXELS_API_KEY")
 
-    def _create_caption_clip(self, word_text, start_t, end_t, video_size=(1080, 1920)):
-        w, h = video_size
-        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        font = None
-        font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-            "C:\\Windows\\Fonts\\impact.ttf",
-            "C:\\Windows\\Fonts\\arialbd.ttf"
-        ]
+    def fetch_multiple_pexels(self, num_clips=4):
+        print(f"[*] Fetching {num_clips} unique food videos from Pexels for a changing background...")
+        headers = {"Authorization": self.pexels_key}
+        url = "https://api.pexels.com/videos/search?query=satisfying+food+cooking+process&orientation=portrait&size=large&per_page=15"
+        res = requests.get(url, headers=headers)
+        if res.status_code != 200:
+            raise RuntimeError(f"Pexels API failed: {res.status_code} {res.text}")
         
-        for p in font_paths:
-            if os.path.exists(p):
-                try:
-                    font = ImageFont.truetype(p, 85)
-                    break
-                except: pass
-
-        if font is None:
-            font = ImageFont.load_default()
-
-        text = word_text.upper()
+        videos = res.json().get("videos", [])
+        random.shuffle(videos)
         
-        try:
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
-        except:
-            text_w, text_h = len(text) * 40, 90
-
-        x = (w - text_w) / 2
-        y = (h / 2) + 120
-
-        stroke_w = 9
-        draw.text((x, y), text, font=font, fill="#FFE600", stroke_width=stroke_w, stroke_fill="black")
-
-        img_np = np.array(img)
-        duration = max(0.05, end_t - start_t)
-        clip = ImageClip(img_np).set_start(start_t).set_duration(duration)
-        
-        # Clean up PIL image memory
-        img.close()
-        return clip
+        downloaded = []
+        for i, v in enumerate(videos[:num_clips]):
+            link = v["video_files"][0]["link"]
+            path = os.path.join(self.workspace, f"bg_{random.randint(1000,9999)}.mp4")
+            with open(path, "wb") as f:
+                f.write(requests.get(link).content)
+            downloaded.append(path)
+        return downloaded
 
     def render_short(self, seed, output_path):
-        audio_clip = AudioFileClip(seed["audio_path"])
-        duration = audio_clip.duration
-
-        bg_clip = self.visual_gen.generate_background(duration, seed)
-        bar_clip = self.visual_gen.generate_progress_bar(duration)
-
-        timings = seed.get("word_timings", [])
-        caption_clips = []
+        audio = AudioFileClip(seed["audio_path"])
+        duration = audio.duration
         
-        if timings:
-            for item in timings:
-                w_text = item["word"]
-                w_start = item["start"]
-                w_end = item["end"]
-                caption_clips.append(self._create_caption_clip(w_text, w_start, w_end))
+        # 1. Background Generation (Stitching multiple clips)
+        bg_paths = self.fetch_multiple_pexels(num_clips=5)
+        clips = []
+        for path in bg_paths:
+            c = VideoFileClip(path, audio=False)
+            # Standardize sizing for vertical short (1080x1920)
+            if c.w / c.h > 1080/1920:
+                c = crop(c, x_center=c.w/2, y_center=c.h/2, width=c.h*(1080/1920), height=c.h)
+            c = resize(c, newsize=(1080, 1920))
+            clips.append(c)
+            
+        final_bg = concatenate_videoclips(clips, method="compose")
+        
+        # If the stitched video is shorter than audio, loop it
+        if final_bg.duration < duration:
+            from moviepy.video.fx.all import loop
+            final_bg = loop(final_bg, duration=duration)
+        else:
+            final_bg = final_bg.subclip(0, duration)
+            
+        final_bg = final_bg.set_audio(audio)
 
-        final_video = CompositeVideoClip([bg_clip, bar_clip] + caption_clips, size=(1080, 1920))
-        final_video = final_video.set_audio(audio_clip).set_duration(duration)
+        # 2. Dead-Center Yellow Subtitle Generation
+        print("[*] Burning centered yellow text word-by-word...")
+        subtitle_clips = []
+        for word_event in seed["word_timings"]:
+            # Standardize text constraints
+            txt = TextClip(
+                word_event["word"].upper(),
+                fontsize=110,
+                color='yellow',
+                font='Impact',
+                stroke_color='black',
+                stroke_width=5,
+                method='caption',
+                align='center',
+                size=(900, None)
+            )
+            # Lock to exact center of the screen
+            txt = txt.set_position('center').set_start(word_event["start"]).set_end(word_event["end"])
+            subtitle_clips.append(txt)
 
-        # Write video with minimal thread usage to conserve memory
+        # 3. Composite and Render
+        final_video = CompositeVideoClip([final_bg] + subtitle_clips)
+        print(f"[*] Rendering final video to {output_path}...")
         final_video.write_videofile(
-            output_path,
-            fps=30,
-            codec="libx264",
-            audio_codec="aac",
-            preset="ultrafast",
-            threads=1,
+            output_path, 
+            fps=30, 
+            codec="libx264", 
+            audio_codec="aac", 
+            preset="ultrafast", 
+            threads=4,
             logger=None
         )
-
-        # Strict memory de-allocation and garbage collection
+        
+        audio.close()
+        final_bg.close()
         final_video.close()
-        audio_clip.close()
-        bg_clip.close()
-        bar_clip.close()
-        for c in caption_clips:
-            try: c.close()
-            except: pass
-
-        if hasattr(bg_clip, 'source_readers'):
-            for reader in bg_clip.source_readers:
-                try: reader.close()
-                except: pass
-
-        gc.collect()
-
+        
         return RenderResult(output_path)

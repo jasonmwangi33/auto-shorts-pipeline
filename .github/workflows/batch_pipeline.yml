@@ -1,4 +1,4 @@
-﻿name: Two-Phase Distributed Pipeline
+﻿name: Master Architecture Pipeline
 
 on:
   workflow_dispatch:
@@ -32,24 +32,22 @@ on:
         required: false
         type: string
 
+env:
+  MALLOC_ARENA_MAX: 2
+
 jobs:
-  ai-processing-stage:
-    name: Phase 1 - Centralized AI Processing
+  ai-processor:
+    name: Phase 1 (AI Processing)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
-      - name: Install AI Dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-ai.txt
-      - name: Run Centralized AI Stage
+      - run: pip install requests
+      - name: Run AI Stage
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           STORY_1: ${{ inputs.story_1 }}
@@ -60,47 +58,41 @@ jobs:
           STORY_6: ${{ inputs.story_6 }}
           STORY_7: ${{ inputs.story_7 }}
         run: python pipeline/batch_router.py 1
-      - name: Upload Workspace Artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: shared-workspace
           path: workspace/
           overwrite: true
 
-  distributed-workers:
-    name: Phase 2 - Story Worker ${{ matrix.story_id }}
-    needs: ai-processing-stage
+  story-workers:
+    name: Account ${{ matrix.story_id }} Worker
+    needs: ai-processor
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       matrix:
         story_id: [1, 2, 3, 4, 5, 6, 7]
       fail-fast: false
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - name: Install System Dependencies (ImageMagick for Text)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          sudo sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
-      - name: Download Workspace Artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: shared-workspace
           path: workspace/
-      - name: Install All Required Dependencies Upfront
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-ai.txt
-          pip install -r requirements-render.txt
-          pip install -r requirements-publish.txt
-      - name: Run Dedicated Story Worker
+      - run: pip install requests edge-tts moviepy==1.0.3 Pillow==9.5.0 numpy==1.26.4 google-api-python-client google-auth-httplib2 google-auth-oauthlib
+      - name: Render & Publish
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
           YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
-          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
         run: python pipeline/batch_router.py ${{ matrix.story_id }}
