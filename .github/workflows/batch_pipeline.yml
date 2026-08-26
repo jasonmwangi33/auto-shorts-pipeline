@@ -1,4 +1,4 @@
-﻿name: Batch Story Rendering Pipeline
+﻿name: Story-by-Story Lifecycle Pipeline
 
 on:
   workflow_dispatch:
@@ -33,10 +33,14 @@ on:
         type: string
 
 jobs:
-  ai-processing:
-    name: AI Story Processing
+  story-lifecycle:
+    name: Story ${{ matrix.story_id }} Lifecycle
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        story_id: [1, 2, 3, 4, 5, 6, 7]
+      fail-fast: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -45,13 +49,20 @@ jobs:
         with:
           python-version: '3.10'
           cache: 'pip'
-      - name: Install Dependencies
+      - name: Install All Dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements-ai.txt
-      - name: Run Gemini AI (Stage 1)
+          pip install -r requirements-render.txt
+          pip install -r requirements-publish.txt
+      - name: Run Complete Story Lifecycle (AI -> Render -> Upload)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
+          YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
           STORY_1: ${{ inputs.story_1 }}
           STORY_2: ${{ inputs.story_2 }}
           STORY_3: ${{ inputs.story_3 }}
@@ -59,73 +70,4 @@ jobs:
           STORY_5: ${{ inputs.story_5 }}
           STORY_6: ${{ inputs.story_6 }}
           STORY_7: ${{ inputs.story_7 }}
-        run: python pipeline/batch_router.py 1
-      - name: Upload Workspace
-        uses: actions/upload-artifact@v4
-        with:
-          name: shared-workspace
-          path: workspace/
-          overwrite: true
-
-  cloud-rendering:
-    name: Cloud Rendering
-    needs: ai-processing
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-      - name: Download Workspace
-        uses: actions/download-artifact@v4
-        with:
-          name: shared-workspace
-          path: workspace/
-      - name: Install Dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-render.txt
-      - name: Run Engine (Stage 2)
-        env:
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: python pipeline/batch_router.py 2
-      - name: Upload Workspace
-        uses: actions/upload-artifact@v4
-        with:
-          name: shared-workspace
-          path: workspace/
-          overwrite: true
-
-  publishing:
-    name: Auto-Publishing
-    needs: cloud-rendering
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-      - name: Download Workspace
-        uses: actions/download-artifact@v4
-        with:
-          name: shared-workspace
-          path: workspace/
-      - name: Install Dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-publish.txt
-      - name: Run Publisher & Uploader (Stage 3)
-        env:
-          YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
-          YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
-          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
-        run: python pipeline/batch_router.py 3
+        run: python pipeline/batch_router.py ${{ matrix.story_id }}
