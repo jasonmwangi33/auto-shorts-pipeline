@@ -48,10 +48,15 @@ def get_pexels_background_url():
         raise ValueError("CRITICAL FAIL: PEXELS_API_KEY is missing from environment secrets.")
     
     queries = [
-        "minecraft parkour gameplay loop vertical no people",
-        "minecraft parkour smooth gameplay background",
-        "minecraft obstacle course gameplay vertical"
-    ]
+    "minecraft parkour gameplay loop vertical no people",
+    "minecraft obstacle course gameplay vertical",
+    "overhead macro food preparation slicing chopping no face",
+    "satisfying baking cake decorating vertical",
+    "satisfying cooking loop vertical",
+    "gta 5 car ramp gameplay vertical loop",
+    "satisfying kinetic sand cutting vertical",
+    "satisfying ASMR food preparation vertical"
+]
     query = random.choice(queries)
     url = f"https://api.pexels.com/videos/search?query={query}&per_page=15&orientation=portrait"
     
@@ -245,3 +250,4 @@ if __name__ == "__main__":
         run_stage_2(story_id)
     elif stage == "3":
         run_stage_3()
+
