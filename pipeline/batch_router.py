@@ -26,8 +26,7 @@ def polish_story_with_gemini(raw_text):
     model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
     Rewrite the following story into a fast-paced, high-retention first-person short story.
-    Keep it strictly under 180 words so it fits in a single 50-second short video.
-    Do not add introductory lines or moral advice. Just tell the story.
+    Keep it engaging and optimized for vertical video. Do not add moral advice.
     Raw Story: {raw_text}
     """
     try:
@@ -36,12 +35,33 @@ def polish_story_with_gemini(raw_text):
         print(f"[!] Gemini Error: {e}")
         return raw_text
 
-def split_story(text, max_words=240):
+def split_story(text):
+    """
+    Splits the story based on your exact rules:
+    - A single video handles up to ~60 seconds (~200 words at +28% speed).
+    - If the story is longer, Part 2 is only created if it has more than 40 seconds (~120 words).
+    - Otherwise, it stays as one single video.
+    """
     words = text.split()
-    if len(words) <= max_words:
+    max_single_video_words = 200  # Up to 60 seconds
+    min_part2_words = 120         # Part 2 must have > 40 seconds
+
+    if len(words) <= max_single_video_words:
         return [(text, "")]
+    
+    # If it's long, check if the remainder is big enough for Part 2
     mid = len(words) // 2
-    return [(" ".join(words[:mid]), "Part 1"), (" ".join(words[mid:]), "Part 2")]
+    part1_words = words[:mid]
+    part2_words = words[mid:]
+
+    if len(part2_words) < min_part2_words:
+        # Remainder is too short for a solid Part 2, keep as one cohesive video
+        return [(text, "")]
+    else:
+        return [
+            (" ".join(part1_words), "Part 1"),
+            (" ".join(part2_words), "Part 2")
+        ]
 
 async def generate_tts(text, output_path):
     communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+28%")
@@ -77,7 +97,7 @@ def run_stage_1():
 
     with open(AI_DATA_FILE, "w") as f:
         json.dump(processed, f)
-    print(f"[+] AI processing complete.")
+    print(f"[+] AI processing complete with smart duration rules.")
 
 def run_stage_2(story_id):
     print(f"[*] PROCESS 2: Local Rendering Engine (Story ID: {story_id})")
