@@ -14,10 +14,11 @@ class Renderer:
         os.makedirs(self.workspace, exist_ok=True)
         self.pexels_key = os.getenv("PEXELS_API_KEY")
 
-    def fetch_multiple_pexels(self, num_clips=4):
-        print(f"[*] Fetching {num_clips} unique food videos from Pexels for a changing background...")
+    def fetch_multiple_pexels(self, num_clips=15):
+        print(f"[*] Fetching {num_clips} unique food videos from Pexels for dynamic cutting...")
         headers = {"Authorization": self.pexels_key}
-        url = "https://api.pexels.com/videos/search?query=satisfying+food+cooking+process&orientation=portrait&size=large&per_page=15"
+        # Fetch 30 results so we have plenty to choose from
+        url = "https://api.pexels.com/videos/search?query=satisfying+food+cooking+process&orientation=portrait&size=large&per_page=30"
         res = requests.get(url, headers=headers)
         if res.status_code != 200:
             raise RuntimeError(f"Pexels API failed: {res.status_code} {res.text}")
@@ -38,11 +39,21 @@ class Renderer:
         audio = AudioFileClip(seed["audio_path"])
         duration = audio.duration
         
-        # 1. Background Generation (Stitching multiple clips)
-        bg_paths = self.fetch_multiple_pexels(num_clips=5)
+        # 1. Fetch 12 clips to guarantee enough footage for a 60-second short
+        bg_paths = self.fetch_multiple_pexels(num_clips=12)
         clips = []
+        
+        # Change the background every 4.5 seconds for high retention
+        snippet_length = 4.5 
+        
         for path in bg_paths:
             c = VideoFileClip(path, audio=False)
+            
+            # Chop out a satisfying 4.5-second snippet from a random part of the video
+            if c.duration > snippet_length:
+                start_time = random.uniform(0, c.duration - snippet_length)
+                c = c.subclip(start_time, start_time + snippet_length)
+            
             # Standardize sizing for vertical short (1080x1920)
             if c.w / c.h > 1080/1920:
                 c = crop(c, x_center=c.w/2, y_center=c.h/2, width=c.h*(1080/1920), height=c.h)
@@ -51,7 +62,7 @@ class Renderer:
             
         final_bg = concatenate_videoclips(clips, method="compose")
         
-        # If the stitched video is shorter than audio, loop it
+        # If the stitched video is somehow shorter than audio, loop it
         if final_bg.duration < duration:
             from moviepy.video.fx.all import loop
             final_bg = loop(final_bg, duration=duration)
@@ -64,7 +75,6 @@ class Renderer:
         print("[*] Burning centered yellow text word-by-word...")
         subtitle_clips = []
         for word_event in seed["word_timings"]:
-            # Standardize text constraints
             txt = TextClip(
                 word_event["word"].upper(),
                 fontsize=110,
@@ -76,7 +86,6 @@ class Renderer:
                 align='center',
                 size=(900, None)
             )
-            # Lock to exact center of the screen
             txt = txt.set_position('center').set_start(word_event["start"]).set_end(word_event["end"])
             subtitle_clips.append(txt)
 
