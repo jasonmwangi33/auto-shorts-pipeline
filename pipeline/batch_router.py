@@ -13,6 +13,7 @@ except ImportError:
 
 WORKSPACE_DIR = "workspace"
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
+AI_DATA_FILE = os.path.join(WORKSPACE_DIR, "ai_output.json")
 
 def polish_story_with_gemini(raw_text):
     if not raw_text or len(raw_text.strip()) == 0:
@@ -68,24 +69,53 @@ def split_story(text):
             (" ".join(part2_words), "Part 2")
         ]
 
-def run_single_story_worker(story_id):
+# PHASE 1: Centralized AI Stage processing all stories upfront
+def run_stage_1():
+    print("==================================================")
+    print("PHASE 1: Centralized AI Processing & Spell-Check")
+    print("==================================================")
+    processed = {}
+    titles = {}
+    
+    for i in range(1, 8):
+        raw_story = os.getenv(f"STORY_{i}")
+        if not raw_story or len(raw_story.strip()) == 0:
+            raw_story = f"Story number {i}: I never thought this would happen to me, but last week an unbelievable situation occurred..."
+        
+        print(f"[*] Processing & spell-checking Story {i} via Gemini...")
+        polished_text, custom_title = polish_story_with_gemini(raw_story)
+        processed[str(i)] = split_story(polished_text)
+        titles[str(i)] = custom_title
+        print(f"[+] Story {i} Title: '{custom_title}'")
+        time.sleep(0.5)
+
+    data_payload = {"stories": processed, "titles": titles}
+    with open(AI_DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data_payload, f, indent=2)
+    print(f"[+] Phase 1 Complete. AI data saved to {AI_DATA_FILE}")
+
+# PHASE 2: Distributed worker rendering and uploading a specific story
+def run_story_worker(story_id):
     story_key = str(story_id)
     print("==================================================")
-    print(f"DISTRIBUTED WORKER START: Story {story_key}")
+    print(f"PHASE 2 WORKER START: Story {story_key}")
     print("==================================================")
 
-    raw_story = os.getenv(f"STORY_{story_id}")
-    if not raw_story or len(raw_story.strip()) == 0:
-        raw_story = f"Story number {story_key}: I never thought this would happen to me, but last week an unbelievable situation occurred..."
+    if not os.path.exists(AI_DATA_FILE):
+        raise FileNotFoundError(f"CRITICAL FAIL: AI data missing at {AI_DATA_FILE}. Phase 1 must run first.")
 
-    # Stage 1: AI & Spelling Check
-    print(f"[*] [Stage 1] Spell-checking and polishing Story {story_key} via Gemini...")
-    polished_text, custom_title = polish_story_with_gemini(raw_story)
-    chunks = split_story(polished_text)
-    print(f"[+] [Stage 1 Complete] Title: '{custom_title}'")
+    with open(AI_DATA_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        processed = data.get("stories", {})
+        titles = data.get("titles", {})
 
-    # Stage 2: Render & Subtitles
-    print(f"[*] [Stage 2] Rendering video and center subtitles for Story {story_key}...")
+    if story_key not in processed:
+        print(f"[-] Story {story_key} not found in AI data. Skipping.")
+        return
+
+    chunks = processed[story_key]
+    custom_title = titles.get(story_key, f"Satisfying Story #{story_key} #shorts")
+
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from pipeline.renderer import Renderer
     renderer = Renderer()
@@ -116,10 +146,10 @@ def run_single_story_worker(story_id):
         audio_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp3")
         video_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp4")
 
-        print(f"[*] Generating Voiceover for {formatted_title}...")
+        print(f"[*] Generating Voiceover for Story {story_key} {formatted_title}...")
         word_events = generate_tts_sync(text, audio_path)
 
-        print(f"[*] Compositing Video with Center Subtitles for {formatted_title}...")
+        print(f"[*] Rendering Video with Center Subtitles for Story {story_key} {formatted_title}...")
         seed = {
             "id": job_id,
             "script": text,
@@ -135,10 +165,10 @@ def run_single_story_worker(story_id):
         except Exception as e:
             raise RuntimeError(f"CRITICAL FAIL: Renderer crashed on {job_id}. Error: {e}")
 
-    print(f"[+] [Stage 2 Complete] Story {story_key} rendered.")
+    print(f"[+] Video rendering complete for Story {story_key}.")
 
-    # Stage 3: Account-Isolated Publishing
-    print(f"[*] [Stage 3] Publishing Story {story_key} to assigned YouTube account...")
+    # Publishing Stage
+    print(f"[*] Publishing Story {story_key} to assigned YouTube account...")
     try:
         from publishers.manager import publish_qc_video
     except ImportError:
@@ -173,15 +203,18 @@ def run_single_story_worker(story_id):
                 instagram_caption=desc_text,
                 video_public_url=""
             )
-            print(f"[+] Success: Story {story_key} published to Account #{target_account_index + 1}.")
+            print(f"[+] Success: Story {story_key} successfully uploaded to Account #{target_account_index + 1}.")
         except Exception as e:
             raise RuntimeError(f"CRITICAL FAIL: Publishing failed for Account #{target_account_index + 1}. Error: {e}")
 
     print("==================================================")
-    print(f"LIFECYCLE COMPLETE: Story {story_key} successfully uploaded!")
+    print(f"LIFECYCLE COMPLETE: Story {story_key} fully processed and uploaded!")
     print("==================================================")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2: sys.exit(1)
-    story_id = sys.argv[1]
-    run_single_story_worker(story_id)
+    arg = sys.argv[1]
+    if arg == "1":
+        run_stage_1()
+    else:
+        run_story_worker(arg)
