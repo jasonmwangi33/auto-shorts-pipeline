@@ -55,7 +55,10 @@ jobs:
           STORY_5: ${{ inputs.story_5 }}
           STORY_6: ${{ inputs.story_6 }}
           STORY_7: ${{ inputs.story_7 }}
-        run: python pipeline/batch_router.py 1
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          python pipeline/batch_router.py 1
       - name: Pass Data to Render Stage
         uses: actions/upload-artifact@v4
         with:
@@ -86,7 +89,10 @@ jobs:
           CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           CREATOMATE_TEMPLATE_ID: ${{ secrets.CREATOMATE_TEMPLATE_ID }}
-        run: python pipeline/batch_router.py 2
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          python pipeline/batch_router.py 2
       - name: Pass Data to Publish Stage
         uses: actions/upload-artifact@v4
         with:
@@ -120,5 +126,9 @@ jobs:
           YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
-        run: python pipeline/batch_router.py 3
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          python pipeline/batch_router.py 3
+
 
