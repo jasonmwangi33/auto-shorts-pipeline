@@ -35,18 +35,28 @@ def polish_story_with_gemini(raw_text):
     try:
         if HAS_NEW_GENAI:
             client = genai.Client(api_key=api_key)
-            story_res = client.models.generate_content(model='gemini-1.5-flash', contents=story_prompt).text.strip()
-            title_res = client.models.generate_content(model='gemini-1.5-flash', contents=title_prompt).text.strip()
+            # Use standard gemini-2.5-flash or gemini-2.0-flash compatible with new google-genai SDK
+            story_res = client.models.generate_content(model='gemini-2.5-flash', contents=story_prompt).text.strip()
+            title_res = client.models.generate_content(model='gemini-2.5-flash', contents=title_prompt).text.strip()
             return story_res, title_res
         else:
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=api_key)
             model = legacy_genai.GenerativeModel('gemini-1.5-flash')
             story_res = model.generate_content(story_prompt).text.strip()
-            title_res = model.generate_content(model='gemini-1.5-flash', contents=title_prompt).text.strip()
+            title_res = model.generate_content(title_prompt).text.strip()
             return story_res, title_res
     except Exception as e:
         print(f"[!] Gemini AI Error: {e}")
+        # Fallback to gemini-2.0-flash if 2.5 isn't available on key
+        try:
+            if HAS_NEW_GENAI:
+                client = genai.Client(api_key=api_key)
+                story_res = client.models.generate_content(model='gemini-2.0-flash', contents=story_prompt).text.strip()
+                title_res = client.models.generate_content(model='gemini-2.0-flash', contents=title_prompt).text.strip()
+                return story_res, title_res
+        except Exception as e2:
+            print(f"[!] Gemini Fallback Error: {e2}")
         return raw_text, "Crazy Reddit Story #shorts"
 
 def split_story(text):
@@ -165,7 +175,7 @@ def run_story_worker(story_id):
 
     print(f"[+] Video rendering complete for Story {story_key}.")
 
-    # Publishing Stage - using correct arguments matching publish_qc_video signature
+    # Publishing Stage
     print(f"[*] Publishing Story {story_key} to assigned YouTube account...")
     try:
         from publishers.manager import publish_qc_video
@@ -191,7 +201,6 @@ def run_story_worker(story_id):
         print(f"[FORCE] Publishing to YouTube Account #{target_account_index + 1}...")
 
         try:
-            # Call with standard parameters compatible with publishers manager
             publish_qc_video(
                 video_path=local_video_path,
                 job_id=f"story_{story_key}_part_{idx+1}",
