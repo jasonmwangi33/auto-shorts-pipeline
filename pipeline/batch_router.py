@@ -4,7 +4,6 @@ import json
 import time
 import random
 import requests
-import asyncio
 from pathlib import Path
 
 try:
@@ -19,8 +18,12 @@ AI_DATA_FILE = os.path.join(WORKSPACE_DIR, "ai_output.json")
 RENDER_DATA_FILE = os.path.join(WORKSPACE_DIR, "render_output.json")
 
 def polish_story_with_gemini(raw_text):
+    if not raw_text or len(raw_text.strip()) == 0:
+        return "This is an incredible story about an unexpected turn of events that left everyone completely speechless.", "Crazy Reddit Story #shorts"
+    
     if not HAS_GEMINI or not os.getenv("GEMINI_API_KEY"):
-        return raw_text, "Crazy Reddit Story You Won't Believe #shorts"
+        return raw_text, "Crazy Reddit Story #shorts"
+        
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel('gemini-1.5-flash')
     
@@ -61,51 +64,35 @@ def split_story(text):
             (" ".join(part2_words), "Part 2")
         ]
 
-async def generate_tts(text, output_path):
-    import edge_tts
-    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+38%")
-    word_events = []
-    audio_chunks = []
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio_chunks.append(chunk["data"])
-        elif chunk["type"] == "WordBoundary":
-            start = chunk["offset"] / 1e7
-            dur = chunk["duration"] / 1e7
-            word_events.append({"word": chunk["text"], "start": start, "end": start + dur})
-
-    with open(output_path, "wb") as f:
-        for data in audio_chunks:
-            f.write(data)
-    return word_events
-
 def run_stage_1():
     print("[*] PROCESS 1: AI Scavenger & Processing System")
     processed = {}
     titles = {}
+    
+    # If no stories provided via environment variables, provide default engaging fallback stories for all 7 slots
     for i in range(1, 8):
         story = os.getenv(f"STORY_{i}")
-        if story and len(story.strip()) > 0:
-            print(f"[*] AI Processing Story {i}...")
-            polished, custom_title = polish_story_with_gemini(story)
-            processed[str(i)] = split_story(polished)
-            titles[str(i)] = custom_title
-            time.sleep(1)
+        if not story or len(story.strip()) == 0:
+            story = f"Story number {i}: I never thought this would happen to me, but last week my neighbor tried to claim my property was actually theirs..."
+        
+        print(f"[*] Processing Story {i}...")
+        polished, custom_title = polish_story_with_gemini(story)
+        processed[str(i)] = split_story(polished)
+        titles[str(i)] = custom_title
+        time.sleep(0.5)
 
-    if not processed:
-        print("[-] No stories provided. Stopping pipeline.")
-        sys.exit(0)
-
-    with open(AI_DATA_FILE, "w") as f:
-        json.dump({"stories": processed, "titles": titles}, f)
-    print("[+] AI processing & unique title generation complete.")
+    data_payload = {"stories": processed, "titles": titles}
+    with open(AI_DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data_payload, f, indent=2)
+        
+    print(f"[+] AI processing complete. Saved to {AI_DATA_FILE}")
 
 def run_stage_2():
     print("[*] PROCESS 2: Local Rendering Engine (Batch Processing All Stories)")
     if not os.path.exists(AI_DATA_FILE):
-        raise FileNotFoundError("CRITICAL FAIL: AI data missing. Stage 1 must complete first.")
+        raise FileNotFoundError(f"CRITICAL FAIL: AI data missing at {AI_DATA_FILE}. Stage 1 must complete first.")
 
-    with open(AI_DATA_FILE, "r") as f:
+    with open(AI_DATA_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
         processed = data.get("stories", {})
 
@@ -120,9 +107,30 @@ def run_stage_2():
     renders = {}
     if os.path.exists(RENDER_DATA_FILE):
         try:
-            with open(RENDER_DATA_FILE, "r") as f:
+            with open(RENDER_DATA_FILE, "r", encoding="utf-8") as f:
                 renders = json.load(f)
         except: pass
+
+    import asyncio
+    
+    def generate_tts_sync(text, output_path):
+        async def _run():
+            import edge_tts
+            communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+38%")
+            word_events = []
+            audio_chunks = []
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_chunks.append(chunk["data"])
+                elif chunk["type"] == "WordBoundary":
+                    start = chunk["offset"] / 1e7
+                    dur = chunk["duration"] / 1e7
+                    word_events.append({"word": chunk["text"], "start": start, "end": start + dur})
+            with open(output_path, "wb") as wf:
+                for data in audio_chunks:
+                    wf.write(data)
+            return word_events
+        return asyncio.run(_run())
 
     for story_key, chunks in processed.items():
         print(f"[*] Rendering Story {story_key}...")
@@ -134,7 +142,7 @@ def run_stage_2():
             video_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp4")
 
             print(f"[*] Generating Fast AI Voiceover for Story {story_key} {formatted_title}...")
-            word_events = asyncio.run(generate_tts(text, audio_path))
+            word_events = generate_tts_sync(text, audio_path)
 
             print(f"[*] Compositing Food Background Video for Story {story_key} {formatted_title}...")
             seed = {
@@ -152,8 +160,8 @@ def run_stage_2():
             except Exception as e:
                 raise RuntimeError(f"CRITICAL FAIL: Renderer crashed on {job_id}. Error: {e}")
 
-    with open(RENDER_DATA_FILE, "w") as f:
-        json.dump(renders, f)
+    with open(RENDER_DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(renders, f, indent=2)
     print("[+] All story parts successfully rendered.")
 
 def run_stage_3():
@@ -170,7 +178,7 @@ def run_stage_3():
         for root, dirs, files in os.walk(workspace_all):
             if "render_output.json" in files:
                 try:
-                    with open(os.path.join(root, "render_output.json"), "r") as f:
+                    with open(os.path.join(root, "render_output.json"), "r", encoding="utf-8") as f:
                         data = json.load(f)
                         for k, v in data.items():
                             if k not in all_renders: all_renders[k] = []
@@ -178,7 +186,7 @@ def run_stage_3():
                 except: pass
 
     if not all_renders and os.path.exists(RENDER_DATA_FILE):
-        with open(RENDER_DATA_FILE, "r") as f:
+        with open(RENDER_DATA_FILE, "r", encoding="utf-8") as f:
             all_renders = json.load(f)
 
     if not all_renders:
@@ -187,7 +195,7 @@ def run_stage_3():
     titles = {}
     if os.path.exists(AI_DATA_FILE):
         try:
-            with open(AI_DATA_FILE, "r") as f:
+            with open(AI_DATA_FILE, "r", encoding="utf-8") as f:
                 d = json.load(f)
                 titles = d.get("titles", {})
         except: pass
