@@ -43,8 +43,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install Requirements
-        run: pip install requests google-generativeai
       - name: Run Gemini AI (Stage 1)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -59,18 +57,12 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           python pipeline/batch_router.py 1
-        - name: Upload Workspace
-          uses: actions/upload-artifact@v4
-          with:
-            name: shared-workspace
-            path: workspace/
-            overwrite: true
-      - name: Pass Data to Render Stage
+      - name: Upload Workspace
         uses: actions/upload-artifact@v4
         with:
-          name: ai-workspace
-          path: workspace/ai_output.json
-          retention-days: 1
+          name: shared-workspace
+          path: workspace/
+          overwrite: true
 
   cloud-rendering:
     name: 🎬 Cloud Rendering
@@ -83,39 +75,22 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install Requirements
-        run: pip install requests google-generativeai
-      - name: Download AI Scripts
+      - name: Download Workspace
         uses: actions/download-artifact@v4
         with:
-          name: ai-workspace
-          path: workspace
-      - name: Run Creatomate (Stage 2)
-        env:
-          CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          CREATOMATE_TEMPLATE_ID: ${{ secrets.CREATOMATE_TEMPLATE_ID }}
-        - name: Download Workspace
-          uses: actions/download-artifact@v4
-          with:
-            name: shared-workspace
-            path: workspace/
+          name: shared-workspace
+          path: workspace/
+      - name: Run Engine (Stage 2)
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           python pipeline/batch_router.py 2
-        - name: Upload Workspace
-          uses: actions/upload-artifact@v4
-          with:
-            name: shared-workspace
-            path: workspace/
-            overwrite: true
-      - name: Pass Data to Publish Stage
+      - name: Upload Workspace
         uses: actions/upload-artifact@v4
         with:
-          name: render-workspace
-          path: workspace/render_output.json
-          retention-days: 1
+          name: shared-workspace
+          path: workspace/
+          overwrite: true
 
   publishing:
     name: 🚀 Auto-Publishing
@@ -128,29 +103,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install Requirements
-        run: pip install requests google-generativeai
-      - name: Download Render Status
+      - name: Download Workspace
         uses: actions/download-artifact@v4
         with:
-          name: render-workspace
-          path: workspace
+          name: shared-workspace
+          path: workspace/
       - name: Run Publisher & Uploader (Stage 3)
         env:
-          CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
           YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
-        - name: Download Workspace
-          uses: actions/download-artifact@v4
-          with:
-            name: shared-workspace
-            path: workspace/
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           python pipeline/batch_router.py 3
-
-
