@@ -1,4 +1,4 @@
-﻿name: Story-by-Story Lifecycle Pipeline
+﻿name: Sequential Batch Pipeline
 
 on:
   workflow_dispatch:
@@ -33,14 +33,10 @@ on:
         type: string
 
 jobs:
-  story-lifecycle:
-    name: Story ${{ matrix.story_id }} Lifecycle
+  run-batch:
+    name: Sequential Batch Execution (Stories 1-7)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      matrix:
-        story_id: [1, 2, 3, 4, 5, 6, 7]
-      fail-fast: false
+    timeout-minutes: 120
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -55,7 +51,7 @@ jobs:
           pip install -r requirements-ai.txt
           pip install -r requirements-render.txt
           pip install -r requirements-publish.txt
-      - name: Run Complete Story Lifecycle (AI -> Render -> Upload)
+      - name: Run Sequential Batch Pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -70,4 +66,4 @@ jobs:
           STORY_5: ${{ inputs.story_5 }}
           STORY_6: ${{ inputs.story_6 }}
           STORY_7: ${{ inputs.story_7 }}
-        run: python pipeline/batch_router.py ${{ matrix.story_id }}
+        run: python pipeline/batch_router.py
