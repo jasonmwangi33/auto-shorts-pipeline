@@ -8,18 +8,18 @@ from moviepy.editor import VideoFileClip, concatenate_videoclips
 logger = logging.getLogger("visuals")
 
 QUERIES = [
-    "minecraft parkour gameplay loop vertical no people",
-    "satisfying baking cake decorating vertical",
-    "gta 5 car ramp gameplay vertical loop",
+    "minecraft parkour gameplay vertical",
+    "gta 5 car ramp vertical loop",
     "satisfying kinetic sand cutting vertical",
-    "satisfying ASMR food preparation vertical"
+    "satisfying soap carving vertical",
+    "satisfying asmr hydraulic press vertical"
 ]
 
 def fetch_pexels_video(query: str) -> str:
     api_key = os.environ.get("PEXELS_API_KEY")
     if not api_key: return None
     headers = {"Authorization": api_key}
-    url = f"https://api.pexels.com/videos/search?query={query}&per_page=15&orientation=portrait"
+    url = f"https://api.pexels.com/videos/search?query={query}&per_page=20&orientation=portrait"
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         resp.raise_for_status()
@@ -66,41 +66,39 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
     accumulated = 0.0
     query = random.choice(QUERIES)
 
-    try:
-        while accumulated < duration:
+    while accumulated < duration:
+        asset_path = fetch_pexels_video(query)
+        if not asset_path:
+            query = random.choice(QUERIES)
             asset_path = fetch_pexels_video(query)
-            if not asset_path:
-                query = random.choice(QUERIES)
-                asset_path = fetch_pexels_video(query)
-            if not asset_path:
-                raise RuntimeError("No background assets available.")
+        if not asset_path:
+            raise RuntimeError("No background assets available.")
 
-            clip = VideoFileClip(asset_path)
-            if clip.duration <= 0:
-                clip.close()
-                continue
+        clip = VideoFileClip(asset_path)
+        if clip.duration <= 0:
+            clip.close()
+            continue
 
-            clip = clip.speedx(2.0)
-            source_readers.append(clip)
+        # Fast 2.5x gameplay & ASMR speed
+        clip = clip.speedx(2.5)
+        source_readers.append(clip)
 
-            seg_dur = min(round(random.uniform(1.5, 3.0), 2), clip.duration)
-            if accumulated + seg_dur > duration:
-                seg_dur = duration - accumulated
+        seg_dur = min(round(random.uniform(1.8, 3.2), 2), clip.duration)
+        if accumulated + seg_dur > duration:
+            seg_dur = duration - accumulated
 
-            max_start = max(0.0, clip.duration - seg_dur)
-            start_time = random.uniform(0.0, max_start)
+        max_start = max(0.0, clip.duration - seg_dur)
+        start_time = random.uniform(0.0, max_start)
 
-            subclip = clip.subclip(start_time, start_time + seg_dur)
-            subclip = crop_to_9_16(subclip)
+        subclip = clip.subclip(start_time, start_time + seg_dur)
+        subclip = crop_to_9_16(subclip)
 
-            subclips.append(subclip)
-            accumulated += seg_dur
+        subclips.append(subclip)
+        accumulated += seg_dur
 
-        final_bg = concatenate_videoclips(subclips, method="compose")
-        final_bg.source_readers = source_readers
-        return final_bg.subclip(0, duration)
-    except Exception as e:
-        raise
+    final_bg = concatenate_videoclips(subclips, method="compose")
+    final_bg.source_readers = source_readers
+    return final_bg.subclip(0, duration)
 
 class VisualGenerator:
     def generate_background(self, duration: float, seed=None, **kwargs):

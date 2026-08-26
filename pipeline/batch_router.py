@@ -25,8 +25,9 @@ def polish_story_with_gemini(raw_text):
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
-    Rewrite the following story into a highly engaging, first-person narrative optimized for a short-form video.
-    Keep it strictly chronological. Do not add any moralizing, opinions, or closing advice. Just tell the story directly.
+    Rewrite the following story into a fast-paced, high-retention first-person short story.
+    Keep it strictly under 180 words so it fits in a single 50-second short video.
+    Do not add introductory lines or moral advice. Just tell the story.
     Raw Story: {raw_text}
     """
     try:
@@ -35,7 +36,7 @@ def polish_story_with_gemini(raw_text):
         print(f"[!] Gemini Error: {e}")
         return raw_text
 
-def split_story(text, max_words=150):
+def split_story(text, max_words=240):
     words = text.split()
     if len(words) <= max_words:
         return [(text, "")]
@@ -43,7 +44,7 @@ def split_story(text, max_words=150):
     return [(" ".join(words[:mid]), "Part 1"), (" ".join(words[mid:]), "Part 2")]
 
 async def generate_tts(text, output_path):
-    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+12%")
+    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+28%")
     word_events = []
     audio_chunks = []
     async for chunk in communicate.stream():
@@ -68,7 +69,7 @@ def run_stage_1():
             print(f"[*] AI Rewriting Story {i}...")
             polished = polish_story_with_gemini(story)
             processed[str(i)] = split_story(polished)
-            time.sleep(2)
+            time.sleep(1)
 
     if not processed:
         print("[-] No stories provided. Stopping pipeline.")
@@ -76,10 +77,10 @@ def run_stage_1():
 
     with open(AI_DATA_FILE, "w") as f:
         json.dump(processed, f)
-    print(f"[+] AI processing complete. Scripts secured for Matrix Workers.")
+    print(f"[+] AI processing complete.")
 
 def run_stage_2(story_id):
-    print(f"[*] PROCESS 2 & 3: Local 100% Free Engine Rendering (Story ID: {story_id})")
+    print(f"[*] PROCESS 2: Local Rendering Engine (Story ID: {story_id})")
     if not os.path.exists(AI_DATA_FILE):
         raise FileNotFoundError("CRITICAL FAIL: AI data missing. Stage 1 must complete first.")
 
@@ -111,10 +112,10 @@ def run_stage_2(story_id):
         audio_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp3")
         video_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp4")
 
-        print(f"[*] Generating AI Voiceover for {formatted_title}...")
+        print(f"[*] Generating Fast AI Voiceover for {formatted_title}...")
         word_events = asyncio.run(generate_tts(text, audio_path))
 
-        print(f"[*] Compositing Video Locally for {formatted_title}...")
+        print(f"[*] Compositing Video with Bold Captions for {formatted_title}...")
         seed = {
             "id": job_id,
             "script": text,
@@ -134,7 +135,7 @@ def run_stage_2(story_id):
     print(f"[+] All parts rendered for Story {story_key}.")
 
 def run_stage_3():
-    print("[*] PROCESS 4: Strict Verified Publishing")
+    print("[*] PROCESS 3: Strict Verified Publishing")
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     try:
         from publishers.manager import publish_qc_video
@@ -142,19 +143,7 @@ def run_stage_3():
         raise ImportError("CRITICAL FAIL: Publishers manager could not be imported.")
 
     all_renders = {}
-    workspace_all = "workspace_all"
-    if os.path.exists(workspace_all):
-        for root, dirs, files in os.walk(workspace_all):
-            if "render_output.json" in files:
-                try:
-                    with open(os.path.join(root, "render_output.json"), "r") as f:
-                        data = json.load(f)
-                        for k, v in data.items():
-                            if k not in all_renders: all_renders[k] = []
-                            all_renders[k].extend(v)
-                except: pass
-
-    if not all_renders and os.path.exists(RENDER_DATA_FILE):
+    if os.path.exists(RENDER_DATA_FILE):
         with open(RENDER_DATA_FILE, "r") as f:
             all_renders = json.load(f)
 
@@ -166,8 +155,8 @@ def run_stage_3():
             if not os.path.exists(local_video_path):
                 raise RuntimeError(f"CRITICAL FAIL: Video file missing at {local_video_path}")
 
-            title_text = f"Reddit Story - Part {idx+1}"
-            desc_text = "Check out this wild Reddit story! #shorts #reddit"
+            title_text = "Crazy Reddit Story You Won't Believe #shorts #reddit"
+            desc_text = "What would you do in this situation? Comment below! #shorts #reddit #storytime"
 
             try:
                 publish_qc_video(
@@ -184,8 +173,7 @@ def run_stage_3():
                 raise RuntimeError(f"CRITICAL FAIL: Publishing pipeline crashed on Story {index}. Error: {e}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        sys.exit(1)
+    if len(sys.argv) < 2: sys.exit(1)
     stage = sys.argv[1]
     if stage == "1": run_stage_1()
     elif stage == "2": run_stage_2(sys.argv[2] if len(sys.argv) > 2 else 1)
