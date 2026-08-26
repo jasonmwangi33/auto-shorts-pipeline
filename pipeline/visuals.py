@@ -79,11 +79,11 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
             clip.close()
             continue
 
-        # Fast 2.5x food footage speed
-        clip = clip.speedx(2.5)
+        # Fast 3.0x food footage speed for viral pacing
+        clip = clip.speedx(3.0)
         source_readers.append(clip)
 
-        seg_dur = min(round(random.uniform(2.0, 3.5), 2), clip.duration)
+        seg_dur = min(round(random.uniform(1.5, 2.8), 2), clip.duration)
         if accumulated + seg_dur > duration:
             seg_dur = duration - accumulated
 
