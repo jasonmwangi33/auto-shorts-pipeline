@@ -81,6 +81,8 @@ jobs:
           name: shared-workspace
           path: workspace/
       - name: Run Engine (Stage 2)
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
