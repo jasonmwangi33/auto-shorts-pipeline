@@ -5,7 +5,6 @@ import time
 import random
 import requests
 import asyncio
-import edge_tts
 from pathlib import Path
 
 try:
@@ -63,6 +62,7 @@ def split_story(text):
         ]
 
 async def generate_tts(text, output_path):
+    import edge_tts
     communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+38%")
     word_events = []
     audio_chunks = []
@@ -108,7 +108,6 @@ def run_stage_2(story_id):
     with open(AI_DATA_FILE, "r") as f:
         data = json.load(f)
         processed = data.get("stories", {})
-        titles = data.get("titles", {})
 
     story_key = str(story_id)
     if story_key not in processed:
@@ -186,7 +185,6 @@ def run_stage_3(target_story_id=None):
     if not all_renders:
         raise RuntimeError("CRITICAL FAIL: No local render outputs found. Cannot publish.")
 
-    # Load unique titles if available
     titles = {}
     if os.path.exists(AI_DATA_FILE):
         try:
@@ -210,7 +208,6 @@ def run_stage_3(target_story_id=None):
         video_paths = all_renders[index]
         story_idx = int(index)
         
-        # STRICT 1-TO-1 MAPPING: Story 1 -> Account 1 ONLY. Story 2 -> Account 2 ONLY.
         if accounts and len(accounts) > 0:
             target_account_index = (story_idx - 1) % len(accounts)
         else:
@@ -240,7 +237,6 @@ def run_stage_3(target_story_id=None):
                 )
                 print(f"[+] Success: Story {story_idx} locked and published to Account #{target_account_index + 1}.")
             except Exception as e:
-                # Crash if account isolation publishing fails to prevent cross-posting
                 raise RuntimeError(f"CRITICAL FAIL: Strict account isolation failed on Story {story_idx} for Account #{target_account_index + 1}. Error: {e}")
 
 if __name__ == "__main__":
