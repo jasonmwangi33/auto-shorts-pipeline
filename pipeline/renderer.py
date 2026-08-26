@@ -13,12 +13,11 @@ class Renderer:
     def __init__(self):
         self.visual_gen = VisualGenerator()
 
-    def _create_caption_clip(self, words_chunk, start_t, end_t, video_size=(1080, 1920)):
+    def _create_caption_clip(self, word_text, start_t, end_t, video_size=(1080, 1920)):
         w, h = video_size
         img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # Attempt to load bold system fonts, fallback safely
         font = None
         font_paths = [
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -27,59 +26,58 @@ class Renderer:
             "C:\\Windows\\Fonts\\impact.ttf",
             "C:\\Windows\\Fonts\\arialbd.ttf"
         ]
+        
         for p in font_paths:
             if os.path.exists(p):
                 try:
-                    font = ImageFont.truetype(p, 64)
+                    font = ImageFont.truetype(p, 85)  # Large, bold, single-word focus
                     break
                 except: pass
 
         if font is None:
             font = ImageFont.load_default()
 
-        text = " ".join([w["word"].upper() for w in words_chunk])
+        text = word_text.upper()
         
-        # Calculate text position
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-        x = (w - text_w) / 2
-        y = (h / 2) + 80  # Positioned right in the high-engagement center
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_w = bbox[2] - bbox[0]
+            text_h = bbox[3] - bbox[1]
+        except:
+            text_w, text_h = len(text) * 40, 90
 
-        # Draw heavy black outline for instant readability
-        stroke_w = 8
+        x = (w - text_w) / 2
+        y = (h / 2) + 120  # Centered engagement zone
+
+        # Vibrant yellow text with heavy black stroke outline for exact synchronization
+        stroke_w = 9
         draw.text((x, y), text, font=font, fill="#FFE600", stroke_width=stroke_w, stroke_fill="black")
 
         img_np = np.array(img)
-        duration = max(0.08, end_t - start_t)
+        duration = max(0.05, end_t - start_t)
         return ImageClip(img_np).set_start(start_t).set_duration(duration)
 
     def render_short(self, seed, output_path):
         audio_clip = AudioFileClip(seed["audio_path"])
         duration = audio_clip.duration
 
-        # 1. Background video (2.5x speed)
         bg_clip = self.visual_gen.generate_background(duration, seed)
-
-        # 2. Progress Bar
         bar_clip = self.visual_gen.generate_progress_bar(duration)
 
-        # 3. Kinetic Subtitle Overlays (2-3 words per burst)
         timings = seed.get("word_timings", [])
         caption_clips = []
+        
+        # Word-by-word precise synchronization to the dot
         if timings:
-            chunk_size = 3
-            for i in range(0, len(timings), chunk_size):
-                chunk = timings[i:i + chunk_size]
-                c_start = chunk[0]["start"]
-                c_end = chunk[-1]["end"]
-                caption_clips.append(self._create_caption_clip(chunk, c_start, c_end))
+            for item in timings:
+                w_text = item["word"]
+                w_start = item["start"]
+                w_end = item["end"]
+                caption_clips.append(self._create_caption_clip(w_text, w_start, w_end))
 
-        # Composite everything together
         final_video = CompositeVideoClip([bg_clip, bar_clip] + caption_clips, size=(1080, 1920))
         final_video = final_video.set_audio(audio_clip).set_duration(duration)
 
-        # High quality mobile render
         final_video.write_videofile(
             output_path,
             fps=30,

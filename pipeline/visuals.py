@@ -8,11 +8,11 @@ from moviepy.editor import VideoFileClip, concatenate_videoclips
 logger = logging.getLogger("visuals")
 
 QUERIES = [
-    "minecraft parkour gameplay vertical",
-    "gta 5 car ramp vertical loop",
-    "satisfying kinetic sand cutting vertical",
-    "satisfying soap carving vertical",
-    "satisfying asmr hydraulic press vertical"
+    "satisfying cooking food vertical",
+    "baking cake chocolate frosting vertical",
+    "asmr kitchen cooking food prep vertical",
+    "cheese melting pizza food vertical",
+    "chocolate dipping fruit dessert vertical"
 ]
 
 def fetch_pexels_video(query: str) -> str:
@@ -72,18 +72,18 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
             query = random.choice(QUERIES)
             asset_path = fetch_pexels_video(query)
         if not asset_path:
-            raise RuntimeError("No background assets available.")
+            raise RuntimeError("No food background assets available.")
 
         clip = VideoFileClip(asset_path)
         if clip.duration <= 0:
             clip.close()
             continue
 
-        # Fast 2.5x gameplay & ASMR speed
+        # Fast 2.5x food footage speed
         clip = clip.speedx(2.5)
         source_readers.append(clip)
 
-        seg_dur = min(round(random.uniform(1.8, 3.2), 2), clip.duration)
+        seg_dur = min(round(random.uniform(2.0, 3.5), 2), clip.duration)
         if accumulated + seg_dur > duration:
             seg_dur = duration - accumulated
 
