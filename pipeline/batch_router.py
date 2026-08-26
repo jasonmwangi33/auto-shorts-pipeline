@@ -43,7 +43,7 @@ def polish_story_with_gemini(raw_text):
             legacy_genai.configure(api_key=api_key)
             model = legacy_genai.GenerativeModel('gemini-1.5-flash')
             story_res = model.generate_content(story_prompt).text.strip()
-            title_res = model.generate_content(title_prompt).text.strip()
+            title_res = model.generate_content(model='gemini-1.5-flash', contents=title_prompt).text.strip()
             return story_res, title_res
     except Exception as e:
         print(f"[!] Gemini AI Error: {e}")
@@ -69,7 +69,6 @@ def split_story(text):
             (" ".join(part2_words), "Part 2")
         ]
 
-# PHASE 1: Centralized AI Stage processing all stories upfront
 def run_stage_1():
     print("==================================================")
     print("PHASE 1: Centralized AI Processing & Spell-Check")
@@ -94,7 +93,6 @@ def run_stage_1():
         json.dump(data_payload, f, indent=2)
     print(f"[+] Phase 1 Complete. AI data saved to {AI_DATA_FILE}")
 
-# PHASE 2: Distributed worker rendering and uploading a specific story
 def run_story_worker(story_id):
     story_key = str(story_id)
     print("==================================================")
@@ -167,7 +165,7 @@ def run_story_worker(story_id):
 
     print(f"[+] Video rendering complete for Story {story_key}.")
 
-    # Publishing Stage
+    # Publishing Stage - using correct arguments matching publish_qc_video signature
     print(f"[*] Publishing Story {story_key} to assigned YouTube account...")
     try:
         from publishers.manager import publish_qc_video
@@ -193,10 +191,10 @@ def run_story_worker(story_id):
         print(f"[FORCE] Publishing to YouTube Account #{target_account_index + 1}...")
 
         try:
+            # Call with standard parameters compatible with publishers manager
             publish_qc_video(
                 video_path=local_video_path,
                 job_id=f"story_{story_key}_part_{idx+1}",
-                qc_provenance_index=target_account_index,
                 qc_passed=True,
                 title=video_title,
                 youtube_description=desc_text,
