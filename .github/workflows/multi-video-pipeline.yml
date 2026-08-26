@@ -92,6 +92,7 @@ jobs:
       - name: Run Creatomate Render for Story ${{ matrix.story_id }} (Stage 2)
         env:
           CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           CREATOMATE_TEMPLATE_ID: ${{ secrets.CREATOMATE_TEMPLATE_ID }}
           TARGET_STORY_ID: ${{ matrix.story_id }}
         run: python pipeline/batch_router.py 2 ${{ matrix.story_id }}
@@ -122,8 +123,10 @@ jobs:
       - name: Run Publishers & Uploaders (Stage 3)
         env:
           CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
           YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
         run: python pipeline/batch_router.py 3
+
