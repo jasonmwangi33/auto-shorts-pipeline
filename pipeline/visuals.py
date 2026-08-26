@@ -15,17 +15,18 @@ QUERIES = [
     "chocolate dipping fruit dessert vertical"
 ]
 
-def fetch_pexels_video(query: str) -> str:
+def fetch_pexels_video(query: str, index: int = 0) -> str:
     api_key = os.environ.get("PEXELS_API_KEY")
     if not api_key: return None
     headers = {"Authorization": api_key}
-    url = f"https://api.pexels.com/videos/search?query={query}&per_page=20&orientation=portrait"
+    url = f"https://api.pexels.com/videos/search?query={query}&per_page=30&orientation=portrait"
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         resp.raise_for_status()
         videos = resp.json().get("videos", [])
         if not videos: return None
-        video = random.choice(videos)
+        # Deterministic selection so each story gets a unique background video, not random
+        video = videos[index % len(videos)]
         files = video.get("video_files", [])
         if not files: return None
         best_file = max(files, key=lambda f: f.get("width", 0) * f.get("height", 0))
@@ -64,13 +65,13 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
     subclips = []
     source_readers = []
     accumulated = 0.0
-    query = random.choice(QUERIES)
+    story_index = seed.get("story_index", 1)
+    query = QUERIES[(story_index - 1) % len(QUERIES)]
 
     while accumulated < duration:
-        asset_path = fetch_pexels_video(query)
+        asset_path = fetch_pexels_video(query, index=story_index)
         if not asset_path:
-            query = random.choice(QUERIES)
-            asset_path = fetch_pexels_video(query)
+            asset_path = fetch_pexels_video(QUERIES[0], index=story_index)
         if not asset_path:
             raise RuntimeError("No food background assets available.")
 
@@ -79,7 +80,7 @@ def make_background_clip(duration: float, seed) -> VideoFileClip:
             clip.close()
             continue
 
-        # Fast 3.0x food footage speed for viral pacing
+        # Fast 3.0x speed
         clip = clip.speedx(3.0)
         source_readers.append(clip)
 

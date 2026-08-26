@@ -21,19 +21,26 @@ RENDER_DATA_FILE = os.path.join(WORKSPACE_DIR, "render_output.json")
 
 def polish_story_with_gemini(raw_text):
     if not HAS_GEMINI or not os.getenv("GEMINI_API_KEY"):
-        return raw_text
+        return raw_text, "Crazy Reddit Story You Won't Believe #shorts"
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel('gemini-1.5-flash')
-    prompt = f"""
+    
+    story_prompt = f"""
     Rewrite the following story into a fast-paced, high-retention first-person short story.
     Keep it engaging and optimized for vertical video. Do not add moral advice.
     Raw Story: {raw_text}
     """
+    title_prompt = f"""
+    Create a catchy, viral YouTube Short title (under 50 characters) with emojis and hashtags based on this story:
+    {raw_text}
+    """
     try:
-        return model.generate_content(prompt).text.strip()
+        story_res = model.generate_content(story_prompt).text.strip()
+        title_res = model.generate_content(title_prompt).text.strip()
+        return story_res, title_res
     except Exception as e:
         print(f"[!] Gemini Error: {e}")
-        return raw_text
+        return raw_text, "Crazy Reddit Story #shorts"
 
 def split_story(text):
     words = text.split()
@@ -75,12 +82,14 @@ async def generate_tts(text, output_path):
 def run_stage_1():
     print("[*] PROCESS 1: AI Scavenger & Processing System")
     processed = {}
+    titles = {}
     for i in range(1, 8):
         story = os.getenv(f"STORY_{i}")
         if story and len(story.strip()) > 0:
-            print(f"[*] AI Rewriting Story {i}...")
-            polished = polish_story_with_gemini(story)
+            print(f"[*] AI Processing Story {i}...")
+            polished, custom_title = polish_story_with_gemini(story)
             processed[str(i)] = split_story(polished)
+            titles[str(i)] = custom_title
             time.sleep(1)
 
     if not processed:
@@ -88,8 +97,8 @@ def run_stage_1():
         sys.exit(0)
 
     with open(AI_DATA_FILE, "w") as f:
-        json.dump(processed, f)
-    print("[+] AI processing complete.")
+        json.dump({"stories": processed, "titles": titles}, f)
+    print("[+] AI processing & unique title generation complete.")
 
 def run_stage_2(story_id):
     print(f"[*] PROCESS 2: Local Rendering Engine (Story ID: {story_id})")
@@ -97,7 +106,9 @@ def run_stage_2(story_id):
         raise FileNotFoundError("CRITICAL FAIL: AI data missing. Stage 1 must complete first.")
 
     with open(AI_DATA_FILE, "r") as f:
-        processed = json.load(f)
+        data = json.load(f)
+        processed = data.get("stories", {})
+        titles = data.get("titles", {})
 
     story_key = str(story_id)
     if story_key not in processed:
@@ -127,12 +138,13 @@ def run_stage_2(story_id):
         print(f"[*] Generating Fast AI Voiceover for {formatted_title}...")
         word_events = asyncio.run(generate_tts(text, audio_path))
 
-        print(f"[*] Compositing Food Background Video with Word Sync for {formatted_title}...")
+        print(f"[*] Compositing Unique Food Background Video with Word Sync for {formatted_title}...")
         seed = {
             "id": job_id,
             "script": text,
             "audio_path": audio_path,
-            "word_timings": word_events
+            "word_timings": word_events,
+            "story_index": int(story_key)
         }
 
         try:
@@ -147,7 +159,7 @@ def run_stage_2(story_id):
     print(f"[+] All parts rendered for Story {story_key}.")
 
 def run_stage_3(target_story_id=None):
-    print("[*] PROCESS 3: Strict Account-Isolated Publishing")
+    print("[*] PROCESS 3: Strict 1-to-1 Account-Isolated Publishing")
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     try:
         from publishers.manager import publish_qc_video
@@ -174,6 +186,15 @@ def run_stage_3(target_story_id=None):
     if not all_renders:
         raise RuntimeError("CRITICAL FAIL: No local render outputs found. Cannot publish.")
 
+    # Load unique titles if available
+    titles = {}
+    if os.path.exists(AI_DATA_FILE):
+        try:
+            with open(AI_DATA_FILE, "r") as f:
+                d = json.load(f)
+                titles = d.get("titles", {})
+        except: pass
+
     accounts = []
     try:
         acc_env = os.getenv("YOUTUBE_ACCOUNTS_JSON")
@@ -189,16 +210,22 @@ def run_stage_3(target_story_id=None):
         video_paths = all_renders[index]
         story_idx = int(index)
         
-        target_account_index = (story_idx - 1) % len(accounts) if accounts else 0
+        # STRICT 1-TO-1 MAPPING: Story 1 -> Account 1 ONLY. Story 2 -> Account 2 ONLY.
+        if accounts and len(accounts) > 0:
+            target_account_index = (story_idx - 1) % len(accounts)
+        else:
+            target_account_index = 0
+
+        custom_title = titles.get(str(story_idx), f"Satisfying Story #{story_idx} #shorts")
 
         for idx, local_video_path in enumerate(video_paths):
             if not os.path.exists(local_video_path):
                 raise RuntimeError(f"CRITICAL FAIL: Video file missing at {local_video_path}")
 
-            title_text = f"Satisfying Food & Reddit Story #shorts #reddit"
+            video_title = f"{custom_title} (Part {idx+1})" if len(video_paths) > 1 else custom_title
             desc_text = "What would you do in this situation? Comment below! #shorts #reddit #storytime"
 
-            print(f"[*] Publishing Story {story_idx} exclusively to YouTube Account #{target_account_index + 1}...")
+            print(f"[FORCE] Publishing Story {story_idx} EXCLUSIVELY to YouTube Account #{target_account_index + 1}...")
 
             try:
                 publish_qc_video(
@@ -206,25 +233,15 @@ def run_stage_3(target_story_id=None):
                     job_id=f"story_{index}_part_{idx+1}",
                     qc_provenance_index=target_account_index,
                     qc_passed=True,
-                    title=title_text,
+                    title=video_title,
                     youtube_description=desc_text,
                     instagram_caption=desc_text,
                     video_public_url=""
                 )
-                print(f"[+] Published Story {story_idx} successfully to Account #{target_account_index + 1}.")
+                print(f"[+] Success: Story {story_idx} locked and published to Account #{target_account_index + 1}.")
             except Exception as e:
-                try:
-                    publish_qc_video(
-                        video_path=local_video_path,
-                        job_id=f"story_{index}_part_{idx+1}",
-                        qc_passed=True,
-                        title=title_text,
-                        youtube_description=desc_text,
-                        instagram_caption=desc_text,
-                        video_public_url=""
-                    )
-                except Exception as e2:
-                    raise RuntimeError(f"CRITICAL FAIL: Publishing crashed on Story {index}. Error: {e2}")
+                # Crash if account isolation publishing fails to prevent cross-posting
+                raise RuntimeError(f"CRITICAL FAIL: Strict account isolation failed on Story {story_idx} for Account #{target_account_index + 1}. Error: {e}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2: sys.exit(1)
