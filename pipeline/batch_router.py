@@ -2,6 +2,7 @@
 import sys
 import json
 import time
+import random
 import requests
 
 try:
@@ -40,8 +41,43 @@ def split_story(text, max_words=150):
     mid = len(words) // 2
     return [(" ".join(words[:mid]), "Part 1"), (" ".join(words[mid:]), "Part 2")]
 
+def get_pexels_background_url():
+    """PROCESS 2: Fetches a dynamic Minecraft background URL directly from Pexels"""
+    api_key = os.getenv("PEXELS_API_KEY")
+    if not api_key:
+        raise ValueError("CRITICAL FAIL: PEXELS_API_KEY is missing from environment secrets.")
+    
+    queries = [
+        "minecraft parkour gameplay loop vertical no people",
+        "minecraft parkour smooth gameplay background",
+        "minecraft obstacle course gameplay vertical"
+    ]
+    query = random.choice(queries)
+    url = f"https://api.pexels.com/videos/search?query={query}&per_page=15&orientation=portrait"
+    
+    print(f"[*] Fetching background footage for query: '{query}'")
+    try:
+        resp = requests.get(url, headers={"Authorization": api_key}, timeout=15)
+        resp.raise_for_status()
+        videos = resp.json().get("videos", [])
+        if not videos:
+            raise RuntimeError("Pexels returned no videos for query.")
+        
+        video = random.choice(videos)
+        files = video.get("video_files", [])
+        if not files:
+            raise RuntimeError("No video files attached to Pexels asset.")
+            
+        # Get highest quality file
+        best_file = max(files, key=lambda f: f.get("width", 0) * f.get("height", 0))
+        bg_link = best_file.get("link")
+        print(f"[+] Successfully mapped Pexels background URL: {bg_link.split('?')[0]}...")
+        return bg_link
+    except Exception as e:
+        raise RuntimeError(f"CRITICAL FAIL: Background Scavenging failed. {e}")
+
 def run_stage_1():
-    print("[*] Stage 1: AI Scavenger & Processing System")
+    print("[*] PROCESS 1: AI Scavenger & Processing System")
     processed = {}
     for i in range(1, 8):
         story = os.getenv(f"STORY_{i}")
@@ -60,10 +96,9 @@ def run_stage_1():
     print(f"[+] AI processing complete. Scripts secured for Matrix Workers.")
 
 def run_stage_2(story_id):
-    print(f"[*] Stage 2: Cloud Rendering Worker for Story ID: {story_id}")
+    print(f"[*] PROCESS 2 & 3: Background Mapping & Studio Rendering (Story ID: {story_id})")
     if not os.path.exists(AI_DATA_FILE):
-        print("[-] No AI data found. Exiting.")
-        sys.exit(1)
+        raise FileNotFoundError("CRITICAL FAIL: AI data missing. Stage 1 must complete first.")
         
     with open(AI_DATA_FILE, "r") as f:
         processed = json.load(f)
@@ -75,6 +110,12 @@ def run_stage_2(story_id):
 
     api_key = os.getenv("CREATOMATE_API_KEY")
     template_id = os.getenv("CREATOMATE_TEMPLATE_ID")
+    if not api_key or not template_id:
+        raise ValueError("CRITICAL FAIL: Creatomate credentials missing.")
+
+    # Fetch dynamic background URL
+    bg_url = get_pexels_background_url()
+
     url = "https://api.creatomate.com/v2/renders"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     
@@ -90,23 +131,27 @@ def run_stage_2(story_id):
     renders[story_key] = []
     for idx, (text, part_title) in enumerate(chunks):
         formatted_title = part_title.upper() if part_title else f"PART {idx+1}"
+        
+        # Inject text AND background into Creatomate
         payload = {
             "template_id": template_id,
             "modifications": {
                 "Title-Overlay": formatted_title,
-                "Story-Text": text
+                "Story-Text": text,
+                "Background": bg_url  # Passing the Pexels link directly to the studio!
             }
         }
+        
         try:
             response = requests.post(url, headers=headers, json=payload)
             if response.status_code in [200, 201]:
                 render_id = response.json().get('id')
-                print(f"[+] Render sent: Story {story_key} {formatted_title} (ID: {render_id})")
+                print(f"[+] Studio Render Queued: Story {story_key} {formatted_title} (ID: {render_id})")
                 renders[story_key].append(render_id)
             else:
-                print(f"[-] API Error: {response.text}")
+                raise RuntimeError(f"Creatomate API Error: {response.text}")
         except Exception as e:
-            print(f"[!] Error: {e}")
+            raise RuntimeError(f"CRITICAL FAIL: Studio rendering crashed. {e}")
         time.sleep(2)
         
     with open(RENDER_DATA_FILE, "w") as f:
@@ -114,14 +159,13 @@ def run_stage_2(story_id):
     print(f"[+] Render state saved for Story {story_key}.")
 
 def run_stage_3():
-    print("[*] Stage 3: Unified Publisher & Uploader")
+    print("[*] PROCESS 4: Strict Verified Publishing")
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     try:
         from publishers.manager import publish_qc_video
     except ImportError:
-        publish_qc_video = None
+        raise ImportError("CRITICAL FAIL: Publishers manager could not be imported.")
 
-    # Gather all render state files from workspace_all (matrix artifacts download structure)
     all_renders = {}
     workspace_all = "workspace_all"
     if os.path.exists(workspace_all):
@@ -132,74 +176,65 @@ def run_stage_3():
                         data = json.load(f)
                         all_renders.update(data)
                 except Exception as e:
-                    print(f"[-] Error reading render state artifact: {e}")
+                    raise RuntimeError(f"CRITICAL FAIL: Corrupted render state artifact: {e}")
 
-    # Fallback to local workspace if running single node
     if not all_renders and os.path.exists(RENDER_DATA_FILE):
         with open(RENDER_DATA_FILE, "r") as f:
             all_renders = json.load(f)
 
     if not all_renders:
-        print("[-] No render outputs found across matrix slots. Exiting.")
-        sys.exit(1)
+        raise RuntimeError("CRITICAL FAIL: No render outputs found across matrix slots. Cannot publish.")
 
     api_key = os.getenv("CREATOMATE_API_KEY")
     headers = {"Authorization": f"Bearer {api_key}"}
     
-    print("[*] Polling Creatomate for render completion across all slots...")
     for index, render_ids in all_renders.items():
         for idx, r_id in enumerate(render_ids):
             completed = False
             video_url = None
             
-            for _ in range(30):
+            for attempt in range(30):
                 res = requests.get(f"https://api.creatomate.com/v2/renders/{r_id}", headers=headers)
                 if res.status_code == 200:
                     data = res.json()
                     status = data.get("status")
                     if status == "succeeded":
                         video_url = data.get("url")
-                        print(f"[+] Render {r_id} succeeded! URL: {video_url}")
+                        print(f"[+] Studio Render {r_id} Finished! URL: {video_url}")
                         completed = True
                         break
                     elif status == "failed":
-                        print(f"[-] Render {r_id} failed.")
-                        break
+                        raise RuntimeError(f"CRITICAL FAIL: Creatomate failed to render video ID {r_id}. Check template constraints.")
                 time.sleep(10)
             
-            if completed and video_url:
-                local_video_path = os.path.join(WORKSPACE_DIR, f"story_{index}_part_{idx+1}.mp4")
-                print(f"[*] Downloading video from Creatomate to {local_video_path}...")
-                vid_res = requests.get(video_url)
-                with open(local_video_path, "wb") as f:
-                    f.write(vid_res.content)
+            if not completed or not video_url:
+                raise TimeoutError(f"CRITICAL FAIL: Render {r_id} timed out after 5 minutes.")
                 
-                print(f"[*] Dispatching Story {index} Part {idx+1} to Publisher Manager...")
-                if publish_qc_video:
-                    try:
-                        title_text = f"Reddit Story - Part {idx+1}"
-                        desc_text = "Check out this wild Reddit story! #shorts #reddit"
-                        report = publish_qc_video(
-                            video_path=local_video_path,
-                            job_id=f"story_{index}_part_{idx+1}",
-                            qc_passed=True,
-                            title=title_text,
-                            youtube_description=desc_text,
-                            instagram_caption=desc_text,
-                            video_public_url=video_url
-                        )
-                        print(f"[+] Publishing Report: {report}")
-                    except Exception as e:
-                        print(f"[!] Publishing execution error: {e}")
-                        raise
-                else:
-                    print("[-] publish_qc_video function could not be loaded.")
+            local_video_path = os.path.join(WORKSPACE_DIR, f"story_{index}_part_{idx+1}.mp4")
+            print(f"[*] Downloading Studio output to {local_video_path}...")
+            vid_res = requests.get(video_url)
+            with open(local_video_path, "wb") as f:
+                f.write(vid_res.content)
+            
+            try:
+                title_text = f"Reddit Story - Part {idx+1}"
+                desc_text = "Check out this wild Reddit story! #shorts #reddit"
+                publish_qc_video(
+                    video_path=local_video_path,
+                    job_id=f"story_{index}_part_{idx+1}",
+                    qc_passed=True,
+                    title=title_text,
+                    youtube_description=desc_text,
+                    instagram_caption=desc_text,
+                    video_public_url=video_url
+                )
+            except Exception as e:
+                raise RuntimeError(f"CRITICAL FAIL: Publishing pipeline crashed on Story {index}. Error: {e}")
 
-    print("[+] Stage 3 execution complete.")
+    print("[+] All processes executed successfully.")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Error: Specify a stage (1, 2, or 3)")
         sys.exit(1)
         
     stage = sys.argv[1]
@@ -210,4 +245,3 @@ if __name__ == "__main__":
         run_stage_2(story_id)
     elif stage == "3":
         run_stage_3()
-
