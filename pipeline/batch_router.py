@@ -29,14 +29,11 @@ def call_gemini_rest(prompt, api_key):
 def polish_story_with_gemini(raw_text):
     if not raw_text or len(raw_text.strip()) == 0:
         return "This is an incredible story about an unexpected turn of events.", "CRAZY STORY 🤯 #shorts", "A wild story about an unexpected turn of events. unexpected, crazy story, reddit story, storytime, viral. #shorts #viralshorts #reddit #storytime"
-    
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: return raw_text, "CRAZY STORY 🤯 #shorts", "A wild story about an unexpected turn of events. unexpected, crazy story, reddit story, storytime, viral. #shorts #viralshorts #reddit #storytime"
         
     story_prompt = f"You are an expert editor. Fix spelling/grammar and rewrite this into a fast-paced, high-retention first-person short story for vertical video. Limit it to around 150-180 words so it fits in a 60-second video perfectly. Do not split it. No moral advice. Story: {raw_text}"
-    
     title_prompt = f"Create a catchy, viral YouTube Short title based on this story.\nRULES:\n1. The first two words MUST be strong keywords in ALL CAPS.\n2. Keep it under 50 characters total.\n3. Include exactly ONE emoji at the end of the text.\n4. End the title with ONLY the hashtag #shorts (no other hashtags).\nStory: {raw_text}"
-
     desc_prompt = f"Create a YouTube Shorts SEO description based on this story.\nRULES:\n1. First sentence: A concise, punchy summary of the story.\n2. Second line: 5 to 6 highly relevant SEO keywords separated by commas.\n3. Third line: Exactly these hashtags: #shorts #viralshorts #reddit #storytime\nStory: {raw_text}"
     
     story_res = call_gemini_rest(story_prompt, api_key)
@@ -126,15 +123,8 @@ def run_story_worker(story_id):
 
     print(f"[*] Publishing Story {story_key} to target account...")
     from publishers.manager import publish_qc_video
-    
-    accounts = []
-    try:
-        acc_env = os.getenv("YOUTUBE_ACCOUNTS_JSON")
-        if acc_env: accounts = json.loads(acc_env)
-    except: pass
-    target_account_index = (int(story_key) - 1) % len(accounts) if accounts else 0
 
-    print(f"[FORCE] Uploading to YouTube Account #{target_account_index + 1}...")
+    print(f"[FORCE] Uploading STRICTLY to YouTube Account #{story_key}...")
     try:
         publish_qc_video(
             video_path=video_path,
@@ -143,9 +133,10 @@ def run_story_worker(story_id):
             title=custom_title,
             youtube_description=custom_desc,
             instagram_caption=custom_desc,
-            video_public_url=""
+            video_public_url="",
+            target_account_num=int(story_key) # THIS IS THE FIX. Forces exactly ONE account.
         )
-        print(f"[+] Success: Video uploaded to Account #{target_account_index + 1}.")
+        print(f"[+] Success: Video uploaded strictly to Account #{story_key}.")
     except Exception as e:
         print(f"[-] CRITICAL: Publishing failed. Error: {e}")
 
