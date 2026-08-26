@@ -7,83 +7,44 @@ from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 logger = logging.getLogger("visuals")
 
-VISUAL_REGISTRY = {
-    "gaming": {
-        "keywords": ["minecraft", "gaming", "parkour", "game", "gameplay", "player", "level"],
-        "queries": [
-            "minecraft parkour gameplay loop vertical no people",
-            "minecraft parkour smooth gameplay background",
-            "minecraft obstacle course gameplay vertical"
-        ],
-        "local_dir": "assets/backgrounds/gaming",
-        "pexels_enabled": True
-    },
-    "food": {
-        "keywords": ["cooking", "food", "restaurant", "baking", "recipe", "eat", "taste", "chef", "kitchen", "meal", "daughter", "family", "house", "wife", "husband", "date", "girl", "friend", "work", "job"],
-        "queries": [
-            "overhead macro food preparation slicing chopping no face",
-            "juicy steak searing close up sizzling ASMR vertical",
-            "cheese pulling dripping stretching macro food preparation",
-            "molten chocolate pouring macro baking overhead close up"
-        ],
-        "local_dir": "assets/backgrounds/food",
-        "pexels_enabled": True
-    }
-}
-
-def semantic_router(story_text: str) -> str:
-    if not story_text:
-        return random.choice(["gaming", "food"])
-    text_lower = story_text.lower()
-    for category, data in VISUAL_REGISTRY.items():
-        for keyword in data["keywords"]:
-            if keyword in text_lower:
-                return category
-    return random.choice(["gaming", "food"])
+QUERIES = [
+    "minecraft parkour gameplay loop vertical no people",
+    "satisfying baking cake decorating vertical",
+    "gta 5 car ramp gameplay vertical loop",
+    "satisfying kinetic sand cutting vertical",
+    "satisfying ASMR food preparation vertical"
+]
 
 def fetch_pexels_video(query: str) -> str:
     api_key = os.environ.get("PEXELS_API_KEY")
-    if not api_key:
-        return None
+    if not api_key: return None
     headers = {"Authorization": api_key}
-    url = f"https://api.pexels.com/videos/search?query={query}&per_page=20&orientation=portrait"
+    url = f"https://api.pexels.com/videos/search?query={query}&per_page=15&orientation=portrait"
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         resp.raise_for_status()
-        data = resp.json()
-        videos = data.get("videos", [])
-        if not videos:
-            return None
+        videos = resp.json().get("videos", [])
+        if not videos: return None
         video = random.choice(videos)
         files = video.get("video_files", [])
-        if not files:
-            return None
+        if not files: return None
         best_file = max(files, key=lambda f: f.get("width", 0) * f.get("height", 0))
-        download_link = best_file.get("link")
-        if not download_link:
-            return None
+        link = best_file.get("link")
+        if not link: return None
+
         cache_dir = Path("data/bg_cache")
         cache_dir.mkdir(parents=True, exist_ok=True)
         asset_path = cache_dir / f"pexels_{video['id']}.mp4"
         if not asset_path.exists():
-            vid_resp = requests.get(download_link, stream=True, timeout=30)
+            vid_resp = requests.get(link, stream=True, timeout=30)
             vid_resp.raise_for_status()
             with open(asset_path, "wb") as f:
                 for chunk in vid_resp.iter_content(chunk_size=8192):
                     f.write(chunk)
         return str(asset_path)
     except Exception as e:
-        logger.error(f"Pexels API error: {e}")
+        logger.error(f"Pexels error: {e}")
         return None
-
-def get_local_asset(category: str) -> str:
-    local_dir = Path(VISUAL_REGISTRY[category]["local_dir"])
-    if not local_dir.exists():
-        return None
-    assets = [str(p) for p in local_dir.glob("*.*") if p.suffix.lower() in [".mp4", ".mov"]]
-    if not assets:
-        return None
-    return random.choice(assets)
 
 def crop_to_9_16(clip):
     w, h = clip.size
@@ -100,81 +61,51 @@ def crop_to_9_16(clip):
     return clip.resize(height=1920, width=1080)
 
 def make_background_clip(duration: float, seed) -> VideoFileClip:
-    logger.info(f"Generating 2x speed background for duration {duration}s")
-    story_text = ""
-    if isinstance(seed, dict):
-        story_text = seed.get("script", seed.get("story", seed.get("text", "")))
-    elif isinstance(seed, str):
-        story_text = seed
-        
-    category = semantic_router(story_text)
-    registry = VISUAL_REGISTRY[category]
-    
     subclips = []
     source_readers = []
     accumulated = 0.0
-    
+    query = random.choice(QUERIES)
+
     try:
         while accumulated < duration:
-            asset_path = None
-            query = random.choice(registry["queries"])
             asset_path = fetch_pexels_video(query)
             if not asset_path:
-                asset_path = get_local_asset(category)
-            if not asset_path:
-                alt_cat = "food" if category == "gaming" else "gaming"
-                query = random.choice(VISUAL_REGISTRY[alt_cat]["queries"])
+                query = random.choice(QUERIES)
                 asset_path = fetch_pexels_video(query)
             if not asset_path:
-                raise RuntimeError("CRITICAL: No background assets available.")
-                
+                raise RuntimeError("No background assets available.")
+
             clip = VideoFileClip(asset_path)
             if clip.duration <= 0:
                 clip.close()
                 continue
-                
-            # 2x speedup for high-energy motion
+
             clip = clip.speedx(2.0)
             source_readers.append(clip)
-            
-            # Fast 1.5 to 3.0 second cuts
+
             seg_dur = min(round(random.uniform(1.5, 3.0), 2), clip.duration)
             if accumulated + seg_dur > duration:
                 seg_dur = duration - accumulated
-                
+
             max_start = max(0.0, clip.duration - seg_dur)
             start_time = random.uniform(0.0, max_start)
-            
+
             subclip = clip.subclip(start_time, start_time + seg_dur)
             subclip = crop_to_9_16(subclip)
-            
+
             subclips.append(subclip)
             accumulated += seg_dur
-            
+
         final_bg = concatenate_videoclips(subclips, method="compose")
-        final_bg.source_readers = source_readers 
+        final_bg.source_readers = source_readers
         return final_bg.subclip(0, duration)
     except Exception as e:
-        logger.error(f"Background composition error: {e}")
-        for reader in source_readers:
-            try: reader.close()
-            except: pass
-        for sc in subclips:
-            try: sc.close()
-            except: pass
         raise
 
 class VisualGenerator:
-    def __init__(self, *args, **kwargs):
-        pass
     def generate_background(self, duration: float, seed=None, **kwargs):
-        return make_background_clip(duration, seed)
-    def get_hypercut_background(self, duration: float, seed=None, **kwargs):
         return make_background_clip(duration, seed)
     def generate_progress_bar(self, duration: float, video_size=(1080, 1920), **kwargs):
         from moviepy.editor import ColorClip
         w, h = video_size
         return ColorClip(size=(w, 15), color=(255, 215, 0)).set_duration(duration).set_position(("center", "bottom"))
-
-def select_visual_theme() -> str:
-    return "gaming"
