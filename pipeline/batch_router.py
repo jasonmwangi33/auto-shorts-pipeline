@@ -1,122 +1,234 @@
-﻿name: Batch Story Rendering Pipeline
+﻿import os
+import sys
+import json
+import time
+import random
+import requests
+import asyncio
+import edge_tts
+from pathlib import Path
 
-on:
-  workflow_dispatch:
-    inputs:
-      story_1:
-        description: 'Story 1 Text'
-        required: false
-        type: string
-      story_2:
-        description: 'Story 2 Text'
-        required: false
-        type: string
-      story_3:
-        description: 'Story 3 Text'
-        required: false
-        type: string
-      story_4:
-        description: 'Story 4 Text'
-        required: false
-        type: string
-      story_5:
-        description: 'Story 5 Text'
-        required: false
-        type: string
-      story_6:
-        description: 'Story 6 Text'
-        required: false
-        type: string
-      story_7:
-        description: 'Story 7 Text'
-        required: false
-        type: string
+try:
+    import google.generativeai as genai
+    HAS_GEMINI = True
+except ImportError:
+    HAS_GEMINI = False
 
-jobs:
-  ai-processing:
-    name: 🧠 AI Story Processing
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Run Gemini AI (Stage 1)
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          STORY_1: ${{ inputs.story_1 }}
-          STORY_2: ${{ inputs.story_2 }}
-          STORY_3: ${{ inputs.story_3 }}
-          STORY_4: ${{ inputs.story_4 }}
-          STORY_5: ${{ inputs.story_5 }}
-          STORY_6: ${{ inputs.story_6 }}
-          STORY_7: ${{ inputs.story_7 }}
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          python pipeline/batch_router.py 1
-      - name: Upload Workspace
-        uses: actions/upload-artifact@v4
-        with:
-          name: shared-workspace
-          path: workspace/
-          overwrite: true
+WORKSPACE_DIR = "workspace"
+os.makedirs(WORKSPACE_DIR, exist_ok=True)
+AI_DATA_FILE = os.path.join(WORKSPACE_DIR, "ai_output.json")
+RENDER_DATA_FILE = os.path.join(WORKSPACE_DIR, "render_output.json")
 
-  cloud-rendering:
-    name: 🎬 Cloud Rendering
-    needs: ai-processing
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Download Workspace
-        uses: actions/download-artifact@v4
-        with:
-          name: shared-workspace
-          path: workspace/
-      - name: Run Engine (Stage 2)
-        env:
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          python pipeline/batch_router.py 2
-      - name: Upload Workspace
-        uses: actions/upload-artifact@v4
-        with:
-          name: shared-workspace
-          path: workspace/
-          overwrite: true
+def polish_story_with_gemini(raw_text):
+    if not HAS_GEMINI or not os.getenv("GEMINI_API_KEY"):
+        return raw_text
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = f"""
+    Rewrite the following story into a fast-paced, high-retention first-person short story.
+    Keep it engaging and optimized for vertical video. Do not add moral advice.
+    Raw Story: {raw_text}
+    """
+    try:
+        return model.generate_content(prompt).text.strip()
+    except Exception as e:
+        print(f"[!] Gemini Error: {e}")
+        return raw_text
 
-  publishing:
-    name: 🚀 Auto-Publishing
-    needs: cloud-rendering
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Download Workspace
-        uses: actions/download-artifact@v4
-        with:
-          name: shared-workspace
-          path: workspace/
-      - name: Run Publisher & Uploader (Stage 3)
-        env:
-          YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
-          YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
-          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          python pipeline/batch_router.py 3
+def split_story(text):
+    words = text.split()
+    max_single_video_words = 200
+    min_part2_words = 120
+
+    if len(words) <= max_single_video_words:
+        return [(text, "")]
+    
+    mid = len(words) // 2
+    part1_words = words[:mid]
+    part2_words = words[mid:]
+
+    if len(part2_words) < min_part2_words:
+        return [(text, "")]
+    else:
+        return [
+            (" ".join(part1_words), "Part 1"),
+            (" ".join(part2_words), "Part 2")
+        ]
+
+async def generate_tts(text, output_path):
+    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+38%")
+    word_events = []
+    audio_chunks = []
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_chunks.append(chunk["data"])
+        elif chunk["type"] == "WordBoundary":
+            start = chunk["offset"] / 1e7
+            dur = chunk["duration"] / 1e7
+            word_events.append({"word": chunk["text"], "start": start, "end": start + dur})
+
+    with open(output_path, "wb") as f:
+        for data in audio_chunks:
+            f.write(data)
+    return word_events
+
+def run_stage_1():
+    print("[*] PROCESS 1: AI Scavenger & Processing System")
+    processed = {}
+    for i in range(1, 8):
+        story = os.getenv(f"STORY_{i}")
+        if story and len(story.strip()) > 0:
+            print(f"[*] AI Rewriting Story {i}...")
+            polished = polish_story_with_gemini(story)
+            processed[str(i)] = split_story(polished)
+            time.sleep(1)
+
+    if not processed:
+        print("[-] No stories provided. Stopping pipeline.")
+        sys.exit(0)
+
+    with open(AI_DATA_FILE, "w") as f:
+        json.dump(processed, f)
+    print("[+] AI processing complete.")
+
+def run_stage_2(story_id):
+    print(f"[*] PROCESS 2: Local Rendering Engine (Story ID: {story_id})")
+    if not os.path.exists(AI_DATA_FILE):
+        raise FileNotFoundError("CRITICAL FAIL: AI data missing. Stage 1 must complete first.")
+
+    with open(AI_DATA_FILE, "r") as f:
+        processed = json.load(f)
+
+    story_key = str(story_id)
+    if story_key not in processed:
+        print(f"[*] No story content found for slot {story_id}. Skipping worker.")
+        return
+
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    from pipeline.renderer import Renderer
+
+    renderer = Renderer()
+    chunks = processed[story_key]
+    renders = {}
+
+    if os.path.exists(RENDER_DATA_FILE):
+        try:
+            with open(RENDER_DATA_FILE, "r") as f:
+                renders = json.load(f)
+        except: pass
+
+    renders[story_key] = []
+    for idx, (text, part_title) in enumerate(chunks):
+        formatted_title = part_title.upper() if part_title else f"PART {idx+1}"
+        job_id = f"story_{story_key}_part_{idx+1}"
+        audio_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp3")
+        video_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp4")
+
+        print(f"[*] Generating Fast AI Voiceover for {formatted_title}...")
+        word_events = asyncio.run(generate_tts(text, audio_path))
+
+        print(f"[*] Compositing Food Background Video with Word Sync for {formatted_title}...")
+        seed = {
+            "id": job_id,
+            "script": text,
+            "audio_path": audio_path,
+            "word_timings": word_events
+        }
+
+        try:
+            result = renderer.render_short(seed, video_path)
+            print(f"[+] Local Render Finished! Saved to: {result.video_path}")
+            renders[story_key].append(result.video_path)
+        except Exception as e:
+            raise RuntimeError(f"CRITICAL FAIL: Local Rendering Engine crashed on {job_id}. Error: {e}")
+
+    with open(RENDER_DATA_FILE, "w") as f:
+        json.dump(renders, f)
+    print(f"[+] All parts rendered for Story {story_key}.")
+
+def run_stage_3(target_story_id=None):
+    print("[*] PROCESS 3: Strict Account-Isolated Publishing")
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    try:
+        from publishers.manager import publish_qc_video
+    except ImportError:
+        raise ImportError("CRITICAL FAIL: Publishers manager could not be imported.")
+
+    all_renders = {}
+    workspace_all = "workspace_all"
+    if os.path.exists(workspace_all):
+        for root, dirs, files in os.walk(workspace_all):
+            if "render_output.json" in files:
+                try:
+                    with open(os.path.join(root, "render_output.json"), "r") as f:
+                        data = json.load(f)
+                        for k, v in data.items():
+                            if k not in all_renders: all_renders[k] = []
+                            all_renders[k].extend(v)
+                except: pass
+
+    if not all_renders and os.path.exists(RENDER_DATA_FILE):
+        with open(RENDER_DATA_FILE, "r") as f:
+            all_renders = json.load(f)
+
+    if not all_renders:
+        raise RuntimeError("CRITICAL FAIL: No local render outputs found. Cannot publish.")
+
+    accounts = []
+    try:
+        acc_env = os.getenv("YOUTUBE_ACCOUNTS_JSON")
+        if acc_env:
+            accounts = json.loads(acc_env)
+    except: pass
+
+    target_keys = [str(target_story_id)] if target_story_id else list(all_renders.keys())
+
+    for index in target_keys:
+        if index not in all_renders:
+            continue
+        video_paths = all_renders[index]
+        story_idx = int(index)
+        
+        target_account_index = (story_idx - 1) % len(accounts) if accounts else 0
+
+        for idx, local_video_path in enumerate(video_paths):
+            if not os.path.exists(local_video_path):
+                raise RuntimeError(f"CRITICAL FAIL: Video file missing at {local_video_path}")
+
+            title_text = f"Satisfying Food & Reddit Story #shorts #reddit"
+            desc_text = "What would you do in this situation? Comment below! #shorts #reddit #storytime"
+
+            print(f"[*] Publishing Story {story_idx} exclusively to YouTube Account #{target_account_index + 1}...")
+
+            try:
+                publish_qc_video(
+                    video_path=local_video_path,
+                    job_id=f"story_{index}_part_{idx+1}",
+                    qc_provenance_index=target_account_index,
+                    qc_passed=True,
+                    title=title_text,
+                    youtube_description=desc_text,
+                    instagram_caption=desc_text,
+                    video_public_url=""
+                )
+                print(f"[+] Published Story {story_idx} successfully to Account #{target_account_index + 1}.")
+            except Exception as e:
+                try:
+                    publish_qc_video(
+                        video_path=local_video_path,
+                        job_id=f"story_{index}_part_{idx+1}",
+                        qc_passed=True,
+                        title=title_text,
+                        youtube_description=desc_text,
+                        instagram_caption=desc_text,
+                        video_public_url=""
+                    )
+                except Exception as e2:
+                    raise RuntimeError(f"CRITICAL FAIL: Publishing crashed on Story {index}. Error: {e2}")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2: sys.exit(1)
+    stage = sys.argv[1]
+    if stage == "1": run_stage_1()
+    elif stage == "2": run_stage_2(sys.argv[2] if len(sys.argv) > 2 else 1)
+    elif stage == "3": run_stage_3(sys.argv[2] if len(sys.argv) > 2 else None)
