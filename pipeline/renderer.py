@@ -1,4 +1,5 @@
 ﻿import os
+import gc
 import numpy as np
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -30,7 +31,7 @@ class Renderer:
         for p in font_paths:
             if os.path.exists(p):
                 try:
-                    font = ImageFont.truetype(p, 85)  # Large, bold, single-word focus
+                    font = ImageFont.truetype(p, 85)
                     break
                 except: pass
 
@@ -47,15 +48,18 @@ class Renderer:
             text_w, text_h = len(text) * 40, 90
 
         x = (w - text_w) / 2
-        y = (h / 2) + 120  # Centered engagement zone
+        y = (h / 2) + 120
 
-        # Vibrant yellow text with heavy black stroke outline for exact synchronization
         stroke_w = 9
         draw.text((x, y), text, font=font, fill="#FFE600", stroke_width=stroke_w, stroke_fill="black")
 
         img_np = np.array(img)
         duration = max(0.05, end_t - start_t)
-        return ImageClip(img_np).set_start(start_t).set_duration(duration)
+        clip = ImageClip(img_np).set_start(start_t).set_duration(duration)
+        
+        # Clean up PIL image memory
+        img.close()
+        return clip
 
     def render_short(self, seed, output_path):
         audio_clip = AudioFileClip(seed["audio_path"])
@@ -67,7 +71,6 @@ class Renderer:
         timings = seed.get("word_timings", [])
         caption_clips = []
         
-        # Word-by-word precise synchronization to the dot
         if timings:
             for item in timings:
                 w_text = item["word"]
@@ -78,18 +81,31 @@ class Renderer:
         final_video = CompositeVideoClip([bg_clip, bar_clip] + caption_clips, size=(1080, 1920))
         final_video = final_video.set_audio(audio_clip).set_duration(duration)
 
+        # Write video with minimal thread usage to conserve memory
         final_video.write_videofile(
             output_path,
             fps=30,
             codec="libx264",
             audio_codec="aac",
             preset="ultrafast",
-            threads=4,
+            threads=1,
             logger=None
         )
 
+        # Strict memory de-allocation and garbage collection
         final_video.close()
         audio_clip.close()
         bg_clip.close()
+        bar_clip.close()
+        for c in caption_clips:
+            try: c.close()
+            except: pass
+
+        if hasattr(bg_clip, 'source_readers'):
+            for reader in bg_clip.source_readers:
+                try: reader.close()
+                except: pass
+
+        gc.collect()
 
         return RenderResult(output_path)
