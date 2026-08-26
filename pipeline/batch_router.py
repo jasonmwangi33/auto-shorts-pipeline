@@ -100,8 +100,8 @@ def run_stage_1():
         json.dump({"stories": processed, "titles": titles}, f)
     print("[+] AI processing & unique title generation complete.")
 
-def run_stage_2(story_id):
-    print(f"[*] PROCESS 2: Local Rendering Engine (Story ID: {story_id})")
+def run_stage_2():
+    print("[*] PROCESS 2: Local Rendering Engine (Batch Processing All Stories)")
     if not os.path.exists(AI_DATA_FILE):
         raise FileNotFoundError("CRITICAL FAIL: AI data missing. Stage 1 must complete first.")
 
@@ -109,55 +109,54 @@ def run_stage_2(story_id):
         data = json.load(f)
         processed = data.get("stories", {})
 
-    story_key = str(story_id)
-    if story_key not in processed:
-        print(f"[*] No story content found for slot {story_id}. Skipping worker.")
+    if not processed:
+        print("[-] No stories found to render.")
         return
 
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from pipeline.renderer import Renderer
-
     renderer = Renderer()
-    chunks = processed[story_key]
-    renders = {}
 
+    renders = {}
     if os.path.exists(RENDER_DATA_FILE):
         try:
             with open(RENDER_DATA_FILE, "r") as f:
                 renders = json.load(f)
         except: pass
 
-    renders[story_key] = []
-    for idx, (text, part_title) in enumerate(chunks):
-        formatted_title = part_title.upper() if part_title else f"PART {idx+1}"
-        job_id = f"story_{story_key}_part_{idx+1}"
-        audio_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp3")
-        video_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp4")
+    for story_key, chunks in processed.items():
+        print(f"[*] Rendering Story {story_key}...")
+        renders[story_key] = []
+        for idx, (text, part_title) in enumerate(chunks):
+            formatted_title = part_title.upper() if part_title else f"PART {idx+1}"
+            job_id = f"story_{story_key}_part_{idx+1}"
+            audio_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp3")
+            video_path = os.path.join(WORKSPACE_DIR, f"{job_id}.mp4")
 
-        print(f"[*] Generating Fast AI Voiceover for {formatted_title}...")
-        word_events = asyncio.run(generate_tts(text, audio_path))
+            print(f"[*] Generating Fast AI Voiceover for Story {story_key} {formatted_title}...")
+            word_events = asyncio.run(generate_tts(text, audio_path))
 
-        print(f"[*] Compositing Unique Food Background Video with Word Sync for {formatted_title}...")
-        seed = {
-            "id": job_id,
-            "script": text,
-            "audio_path": audio_path,
-            "word_timings": word_events,
-            "story_index": int(story_key)
-        }
+            print(f"[*] Compositing Food Background Video for Story {story_key} {formatted_title}...")
+            seed = {
+                "id": job_id,
+                "script": text,
+                "audio_path": audio_path,
+                "word_timings": word_events,
+                "story_index": int(story_key)
+            }
 
-        try:
-            result = renderer.render_short(seed, video_path)
-            print(f"[+] Local Render Finished! Saved to: {result.video_path}")
-            renders[story_key].append(result.video_path)
-        except Exception as e:
-            raise RuntimeError(f"CRITICAL FAIL: Local Rendering Engine crashed on {job_id}. Error: {e}")
+            try:
+                result = renderer.render_short(seed, video_path)
+                print(f"[+] Render Finished: {result.video_path}")
+                renders[story_key].append(result.video_path)
+            except Exception as e:
+                raise RuntimeError(f"CRITICAL FAIL: Renderer crashed on {job_id}. Error: {e}")
 
     with open(RENDER_DATA_FILE, "w") as f:
         json.dump(renders, f)
-    print(f"[+] All parts rendered for Story {story_key}.")
+    print("[+] All story parts successfully rendered.")
 
-def run_stage_3(target_story_id=None):
+def run_stage_3():
     print("[*] PROCESS 3: Strict 1-to-1 Account-Isolated Publishing")
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     try:
@@ -200,12 +199,7 @@ def run_stage_3(target_story_id=None):
             accounts = json.loads(acc_env)
     except: pass
 
-    target_keys = [str(target_story_id)] if target_story_id else list(all_renders.keys())
-
-    for index in target_keys:
-        if index not in all_renders:
-            continue
-        video_paths = all_renders[index]
+    for index, video_paths in all_renders.items():
         story_idx = int(index)
         
         if accounts and len(accounts) > 0:
@@ -243,5 +237,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2: sys.exit(1)
     stage = sys.argv[1]
     if stage == "1": run_stage_1()
-    elif stage == "2": run_stage_2(sys.argv[2] if len(sys.argv) > 2 else 1)
-    elif stage == "3": run_stage_3(sys.argv[2] if len(sys.argv) > 2 else None)
+    elif stage == "2": run_stage_2()
+    elif stage == "3": run_stage_3()

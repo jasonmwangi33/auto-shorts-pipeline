@@ -45,6 +45,10 @@ jobs:
         with:
           python-version: '3.10'
           cache: 'pip'
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-ai.txt
       - name: Run Gemini AI (Stage 1)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -55,10 +59,7 @@ jobs:
           STORY_5: ${{ inputs.story_5 }}
           STORY_6: ${{ inputs.story_6 }}
           STORY_7: ${{ inputs.story_7 }}
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-ai.txt
-          python pipeline/batch_router.py 1
+        run: python pipeline/batch_router.py 1
       - name: Upload Workspace
         uses: actions/upload-artifact@v4
         with:
@@ -84,13 +85,14 @@ jobs:
         with:
           name: shared-workspace
           path: workspace/
-      - name: Run Engine (Stage 2)
-        env:
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      - name: Install Dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements-render.txt
-          python pipeline/batch_router.py 2
+      - name: Run Engine (Stage 2)
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: python pipeline/batch_router.py 2
       - name: Upload Workspace
         uses: actions/upload-artifact@v4
         with:
@@ -111,13 +113,19 @@ jobs:
         with:
           python-version: '3.10'
           cache: 'pip'
+      - name: Download Workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-workspace
+          path: workspace/
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-publish.txt
       - name: Run Publisher & Uploader (Stage 3)
         env:
           YOUTUBE_ACCOUNTS_JSON: ${{ secrets.YOUTUBE_ACCOUNTS_JSON }}
           YTDLP_COOKIES_CONTENT: ${{ secrets.YTDLP_COOKIES_CONTENT }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-publish.txt
-          python pipeline/batch_router.py 3
+        run: python pipeline/batch_router.py 3
